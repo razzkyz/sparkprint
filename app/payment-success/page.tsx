@@ -1,0 +1,100 @@
+"use client";
+
+import { useEffect, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+
+function PaymentSuccessContent() {
+  const searchParams = useSearchParams();
+  const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
+
+  useEffect(() => {
+    const checkPaymentStatus = async () => {
+      const invoice = searchParams.get("invoice_number");
+      const dokuOrderId = searchParams.get("order_id");
+
+      if (!invoice) {
+        setStatus("error");
+        return;
+      }
+
+      try {
+        // Check order status
+        const res = await fetch(`/api/orders/${dokuOrderId || invoice}`);
+        if (res.ok) {
+          setStatus("success");
+        } else {
+          setStatus("error");
+        }
+      } catch (err) {
+        console.error("Check status error:", err);
+        setStatus("error");
+      }
+    };
+
+    checkPaymentStatus();
+  }, [searchParams]);
+
+  if (status === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-pink-50 to-purple-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Memeriksa status pembayaran...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-pink-50 to-purple-50">
+        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md text-center">
+          <div className="text-red-500 text-5xl mb-4">❌</div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Terjadi Kesalahan</h1>
+          <p className="text-gray-600 mb-6">Gagal memeriksa status pembayaran.</p>
+          <Link
+            href="/"
+            className="inline-block bg-pink-600 text-white px-6 py-3 rounded-xl hover:bg-pink-700 transition-colors"
+          >
+            Kembali ke Beranda
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-pink-50 to-purple-50">
+      <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md text-center">
+        <div className="text-green-500 text-5xl mb-4">✅</div>
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">Pembayaran Berhasil!</h1>
+        <p className="text-gray-600 mb-6">
+          Terima kasih! 🎉<br />
+          Foto Anda sedang diproses. Tunggu panggilan untuk pengambilan.
+        </p>
+        <Link
+          href="/"
+          className="inline-block bg-pink-600 text-white px-6 py-3 rounded-xl hover:bg-pink-700 transition-colors"
+        >
+          Kembali ke Beranda
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+export default function PaymentSuccessPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-pink-50 to-purple-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Memeriksa status pembayaran...</p>
+        </div>
+      </div>
+    }>
+      <PaymentSuccessContent />
+    </Suspense>
+  );
+}

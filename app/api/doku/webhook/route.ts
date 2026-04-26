@@ -1,0 +1,219 @@
+import { NextResponse } from "next/server";
+import crypto from "crypto";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { autoPrintOrder } from "@/lib/autoPrintService";
+
+const DOKU_CLIENT_KEY = process.env.DOKU_CLIENT_KEY!;
+const DOKU_SERVER_KEY = process.env.DOKU_SERVER_KEY!;
+
+/**
+ * Generate Digest: Base64(SHA256(rawBody))
+ */
+function generateDigest(rawBody: string): string {
+  return crypto.createHash("sha256").update(rawBody).digest("base64");
+}
+
+/**
+ * Verify DOKU Non-SNAP Signature from notification header
+ *
+ * DOKU sends these headers: Client-Id, Request-Id, Request-Timestamp, Signature
+ * We must verify the signature using the same algorithm:
+ *   rawString = "Client-Id:<v>\nRequest-Id:<v>\nRequest-Timestamp:<v>\nRequest-Target:<path>\nDigest:<digest>"
+ *   expectedSig = "HMACSHA256=" + Base64(HMAC-SHA256(rawString, secretKey))
+ *
+ * Ref: https://developers.doku.com/get-started-with-doku-api/signature-component/non-snap/signature-component-from-request-header
+ */
+function verifyDokuSignature(
+  clientId: string,
+  requestId: string,
+  requestTimestamp: string,
+  requestTarget: string,
+  rawBody: string,
+  secretKey: string,
+  receivedSignature: string
+): boolean {
+  const digest = generateDigest(rawBody);
+
+  const rawString = [
+    `Client-Id:${clientId}`,
+    `Request-Id:${requestId}`,
+    `Request-Timestamp:${requestTimestamp}`,
+    `Request-Target:${requestTarget}`,
+    `Digest:${digest}`,
+  ].join("\n");
+
+  const hmac = crypto
+    .createHmac("sha256", secretKey)
+    .update(rawString)
+    .digest("base64");
+
+  const expectedSignature = `HMACSHA256=${hmac}`;
+
+  return receivedSignature === expectedSignature;
+}
+
+/**
+ * DOKU JOKUL Checkout Webhook / HTTP Notification Handler
+ *
+ * DOKU sends POST to this URL when payment status changes.
+ * Notification body format (Non-SNAP):
+ * {
+ *   "service": { "id": "QRIS" },
+ *   "acquirer": { "id": "..." },
+ *   "channel": { "id": "QRIS" },
+ *   "transaction": {
+ *     "status": "SUCCESS",   // or "FAILED"
+ *     "date": "2021-01-27T03:24:23Z",
+ *     "original_request_id": "..."
+ *   },
+ *   "order": {
+ *     "invoice_number": "SP-...",  // our doku_order_id
+ *     "amount": 10000
+ *   }
+ * }
+ *
+ * Ref: https://developers.doku.com/get-started-with-doku-api/notification/http-notification-sample-non-snap
+ */
+export async function POST(req: Request) {
+  // Read raw body text first (critical: must not parse JSON yet, for digest calculation)
+  const rawBody = await req.text();
+
+  // Extract DOKU signature headers
+  const clientId = req.headers.get("Client-Id") || req.headers.get("client-id") || "";
+  const requestId = req.headers.get("Request-Id") || req.headers.get("request-id") || "";
+  const requestTimestamp =
+    req.headers.get("Request-Timestamp") || req.headers.get("request-timestamp") || "";
+  const receivedSignature =
+    req.headers.get("Signature") || req.headers.get("signature") || "";
+
+  // The request target for notifications = path of our notification URL
+  const requestTarget = "/api/doku/webhook";
+
+  console.log("[DOKU Webhook] Received notification:", {
+    clientId,
+    requestId,
+    requestTimestamp,
+    receivedSignature: receivedSignature.substring(0, 30) + "...",
+  });
+
+  // Verify signature if SERVER_KEY is configured
+  if (DOKU_SERVER_KEY && receivedSignature) {
+    const isValid = verifyDokuSignature(
+      clientId,
+      requestId,
+      requestTimestamp,
+      requestTarget,
+      rawBody,
+      DOKU_SERVER_KEY,
+      receivedSignature
+    );
+
+    if (!isValid) {
+      console.warn("[DOKU Webhook] Signature mismatch - rejecting notification");
+      return NextResponse.json({ error: "invalid_signature" }, { status: 401 });
+    }
+  } else if (!DOKU_SERVER_KEY) {
+    // Log warning but allow through during development if key not set
+    console.warn("[DOKU Webhook] DOKU_SERVER_KEY not set - skipping signature verification");
+  }
+
+  // Parse the raw body
+  let payload: any;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    console.error("[DOKU Webhook] Failed to parse JSON body:", rawBody);
+    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+  }
+
+  // Extract fields from DOKU Non-SNAP notification format
+  const invoiceNumber: string = payload?.order?.invoice_number;
+  const amount: number = payload?.order?.amount;
+  const transactionStatus: string = payload?.transaction?.status; // "SUCCESS" | "FAILED"
+
+  if (!invoiceNumber || !transactionStatus) {
+    console.warn("[DOKU Webhook] Missing required fields:", { invoiceNumber, transactionStatus, payload });
+    // Return 200 to prevent DOKU retry (but log the issue)
+    return NextResponse.json({ ok: true, msg: "missing_fields" });
+  }
+
+  console.log("[DOKU Webhook] Processing notification:", {
+    invoiceNumber,
+    amount,
+    transactionStatus,
+  });
+
+  // Map DOKU transaction status to our order status
+  const isPaid = transactionStatus === "SUCCESS";
+  let order_status: string;
+
+  if (isPaid) {
+    order_status = "PAID";
+  } else if (transactionStatus === "FAILED" || transactionStatus === "EXPIRED" || transactionStatus === "CANCELLED") {
+    order_status = "FAILED";
+  } else {
+    order_status = "PENDING";
+  }
+
+  try {
+    // Find order by doku_order_id (= invoice_number we sent to DOKU)
+    const { data: existing, error: selErr } = await supabaseAdmin
+      .from("print_orders")
+      .select("id, paid_at, status")
+      .eq("doku_order_id", invoiceNumber)
+      .maybeSingle();
+
+    if (selErr) {
+      console.error("[DOKU Webhook] Database query error:", selErr);
+      return NextResponse.json({ error: selErr.message }, { status: 500 });
+    }
+
+    if (!existing) {
+      console.warn("[DOKU Webhook] Order not found for invoice_number:", invoiceNumber);
+      // Return 200 to prevent DOKU retry for unknown orders
+      return NextResponse.json({ ok: true, msg: "order_not_found" });
+    }
+
+    // Only set paid_at once (avoid overwriting if already processed)
+    const shouldSetPaidAt = isPaid && !existing.paid_at;
+
+    const updatePayload: Record<string, unknown> = { status: order_status };
+    if (shouldSetPaidAt) {
+      updatePayload.paid_at = new Date().toISOString();
+    }
+
+    // Update order status in database
+    const { error: updateErr } = await supabaseAdmin
+      .from("print_orders")
+      .update(updatePayload)
+      .eq("id", existing.id);
+
+    if (updateErr) {
+      console.error("[DOKU Webhook] Failed to update order:", updateErr);
+      return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    }
+
+    console.log("[DOKU Webhook] Order updated:", {
+      id: existing.id,
+      status: order_status,
+      paid_at: shouldSetPaidAt ? updatePayload.paid_at : "unchanged",
+    });
+
+    // Trigger auto-print if payment just confirmed as successful
+    if (isPaid && shouldSetPaidAt) {
+      console.log(`[DOKU Webhook] Payment confirmed for order ${existing.id} - triggering auto-print`);
+      autoPrintOrder(existing.id).catch((err) => {
+        console.error(`[DOKU Webhook] Auto-print failed for ${existing.id}:`, err);
+      });
+    }
+
+    // Always respond 200 OK to DOKU
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("[DOKU Webhook] Unexpected error:", error);
+    return NextResponse.json(
+      { error: "internal_server_error" },
+      { status: 500 }
+    );
+  }
+}

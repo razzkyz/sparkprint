@@ -1,0 +1,31 @@
+{
+  "name": "sparkstage-print",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.93.1",
+    "@zxing/browser": "^0.1.5",
+    "next": "16.1.5",
+    "qz-tray": "^2.1.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "resend": "^6.9.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/qz-tray": "^2.2.2",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.5",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
