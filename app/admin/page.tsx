@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Script from "next/script";
 
 type OrderStatus = "PENDING" | "PAID" | "PRINTED" | "FAILED" | string;
 
@@ -118,22 +117,49 @@ export default function AdminPage() {
         return;
       }
 
-      // Print via browser (QZ Tray or default print)
+      // Print via browser dialog
       for (let i = 0; i < order.image_urls.length; i++) {
         const imageUrl = order.image_urls[i];
         console.log(`Printing image ${i + 1}/${order.image_urls.length}:`, imageUrl);
 
-        // Open image in new tab for printing
-        const printWindow = window.open(imageUrl, '_blank');
-        if (printWindow) {
-          printWindow.onload = () => {
-            printWindow.print();
-            setTimeout(() => printWindow.close(), 1000);
+        // Create hidden image element
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = imageUrl;
+
+        await new Promise((resolve, reject) => {
+          img.onload = () => {
+            // Create canvas
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0);
+            }
+
+            // Open print window
+            const printWindow = window.open('', '_blank');
+            if (printWindow) {
+              printWindow.document.write(`
+                <html>
+                <head><title>Print</title></head>
+                <body style="margin:0;padding:0;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                  <img src="${imageUrl}" style="max-width:100%;max-height:100vh;" onload="window.print();window.close();" />
+                </body>
+                </html>
+              `);
+              printWindow.document.close();
+            } else {
+              alert("Popup blocked. Please allow popups for this site.");
+              reject(new Error("Popup blocked"));
+            }
+            resolve(null);
           };
-        } else {
-          alert("Popup blocked. Please allow popups for this site.");
-          return;
-        }
+          img.onerror = () => {
+            reject(new Error("Failed to load image"));
+          };
+        });
 
         // Delay between prints
         if (i < order.image_urls.length - 1) {
