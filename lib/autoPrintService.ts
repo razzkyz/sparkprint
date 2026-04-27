@@ -18,8 +18,16 @@ const printingQueue = new Map<string, Promise<void>>();
 /**
  * Automatically print an order when payment is received
  * This is called from the Doku webhook when payment status = PAID
+ *
+ * NOTE: Disabled for cloud deployment (Vercel). Use manual printing via admin panel.
  */
 export async function autoPrintOrder(orderId: string): Promise<void> {
+  // Skip auto-print for cloud deployment
+  if (process.env.NODE_ENV === 'production' && process.env.VERCEL) {
+    console.log(`[AUTO-PRINT] Skipping auto-print for cloud deployment. Use manual printing via admin panel.`);
+    return;
+  }
+
   // Prevent duplicate printing of same order
   if (printingQueue.has(orderId)) {
     console.log(`[AUTO-PRINT] Order ${orderId} already in print queue, skipping`);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Script from "next/script";
 
 type OrderStatus = "PENDING" | "PAID" | "PRINTED" | "FAILED" | string;
 
@@ -108,27 +109,39 @@ export default function AdminPage() {
 
   async function markPrinted(id: string) {
     setPrintingIds(prev => new Set(prev).add(id));
-    
-    try {
-      // Step 1: Trigger print (server-side)
-      const printRes = await fetch("/api/admin/manual-print", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeader },
-        body: JSON.stringify({ id }),
-      });
 
-      const printJson = await printRes.json().catch(() => ({}));
-      
-      if (!printRes.ok) {
-        alert(`Print error: ${printJson?.error ?? `HTTP ${printRes.status}`}`);
+    try {
+      // Find order data
+      const order = currentOrders.find(o => o.id === id);
+      if (!order || !order.image_urls || order.image_urls.length === 0) {
+        alert("Order tidak ditemukan atau tidak ada gambar");
         return;
       }
 
-      console.log("Print queued:", printJson);
-      
-      // Step 2: Mark as printed after small delay to ensure print started
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
+      // Print via browser (QZ Tray or default print)
+      for (let i = 0; i < order.image_urls.length; i++) {
+        const imageUrl = order.image_urls[i];
+        console.log(`Printing image ${i + 1}/${order.image_urls.length}:`, imageUrl);
+
+        // Open image in new tab for printing
+        const printWindow = window.open(imageUrl, '_blank');
+        if (printWindow) {
+          printWindow.onload = () => {
+            printWindow.print();
+            setTimeout(() => printWindow.close(), 1000);
+          };
+        } else {
+          alert("Popup blocked. Please allow popups for this site.");
+          return;
+        }
+
+        // Delay between prints
+        if (i < order.image_urls.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
+      // Mark as printed after printing
       const markRes = await fetch("/api/admin/mark-printed", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeader },
