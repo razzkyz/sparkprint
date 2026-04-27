@@ -53,7 +53,7 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<"qris" | "cashier">("qris");
 
   // Filters
-  const [status, setStatus] = useState<"ALL" | "PENDING" | "PAID" | "PRINTED" | "FAILED">("ALL");
+  const [status, setStatus] = useState<"ALL" | "PENDING" | "PAID" | "PRINTED" | "FAILED">("PAID");
   const [needsPrint, setNeedsPrint] = useState(false);
   const [sizeFilter, setSizeFilter] = useState<"ALL" | "4x6" | "strip">("ALL");
   const [q, setQ] = useState("");
@@ -71,12 +71,14 @@ export default function AdminPage() {
 
     setMsg("loading...");
 
-    // Load QRIS orders (payment_method = 'qris' or null, exclude PENDING since they're waiting for payment)
+    // Load QRIS orders (payment_method = 'qris' or null)
     const qrisParams = new URLSearchParams();
-    qrisParams.set("status", needsPrint ? "PAID" : status);
+    // Show all statuses when "needsPrint" is checked (both PENDING and PAID)
+    qrisParams.set("status", needsPrint ? "ALL" : status);
     qrisParams.set("size", sizeFilter);
     qrisParams.set("q", q.trim());
-    qrisParams.set("sortField", "paid_at");
+    // Sort by created_at to show orders in order they came in
+    qrisParams.set("sortField", "created_at");
     qrisParams.set("sortDir", sortDir);
     qrisParams.set("limit", "200");
     qrisParams.set("paymentMethod", "qris");
@@ -399,12 +401,20 @@ export default function AdminPage() {
             <span className="font-semibold text-gray-900">{currentOrders.length}</span>
           </div>
           {activeTab === "qris" && (
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-sm border border-blue-200">
-              <span className="text-blue-600">Perlu Print:</span>
-              <span className="font-semibold text-blue-700">
-                {currentOrders.filter(o => o.status === "PAID").length}
-              </span>
-            </div>
+            <>
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-sm border border-amber-200">
+                <span className="text-amber-600">Menunggu Pembayaran:</span>
+                <span className="font-semibold text-amber-700">
+                  {currentOrders.filter(o => o.status === "PENDING").length}
+                </span>
+              </div>
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-sm border border-blue-200">
+                <span className="text-blue-600">Perlu Print:</span>
+                <span className="font-semibold text-blue-700">
+                  {currentOrders.filter(o => o.status === "PAID").length}
+                </span>
+              </div>
+            </>
           )}
           {activeTab === "cashier" && (
             <>
