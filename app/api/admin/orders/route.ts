@@ -84,14 +84,30 @@ export async function GET(req: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // Parse image_urls from string to array if needed
+  const orders = (data ?? []).map((order: any) => {
+    let imageUrls: string[] = [];
+    if (Array.isArray(order.image_urls)) {
+      imageUrls = order.image_urls;
+    } else if (typeof order.image_urls === 'string' && order.image_urls) {
+      try {
+        imageUrls = JSON.parse(order.image_urls);
+      } catch {
+        // If parse fails, treat as single URL
+        imageUrls = [order.image_urls];
+      }
+    }
+    return { ...order, image_urls: imageUrls };
+  });
+
   // Log orders with null IDs for debugging
-  const nullIdOrders = data?.filter(o => !o.id) ?? [];
+  const nullIdOrders = orders.filter(o => !o.id);
   if (nullIdOrders.length > 0) {
     console.error("[ADMIN ORDERS] Found orders with null IDs:", nullIdOrders);
   }
 
   // Log queue numbers for debugging
-  console.log("[ADMIN ORDERS] Queue numbers:", data?.map(o => ({ id: o.id, queue_number: o.queue_number })));
+  console.log("[ADMIN ORDERS] Queue numbers:", orders.map(o => ({ id: o.id, queue_number: o.queue_number })));
 
-  return NextResponse.json({ ok: true, orders: data ?? [] });
+  return NextResponse.json({ ok: true, orders });
 }

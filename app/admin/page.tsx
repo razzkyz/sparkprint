@@ -114,61 +114,79 @@ export default function AdminPage() {
     try {
       // Find order data
       const order = currentOrders.find(o => o.id === id);
-      if (!order || !order.image_urls || order.image_urls.length === 0) {
-        alert("Order tidak ditemukan atau tidak ada gambar");
+      if (!order) {
+        alert("Order tidak ditemukan");
         return;
       }
 
-      // Print via browser dialog
-      for (let i = 0; i < order.image_urls.length; i++) {
-        const imageUrl = order.image_urls[i];
-        console.log(`Printing image ${i + 1}/${order.image_urls.length}:`, imageUrl);
+      // Handle image_urls - ensure it's an array
+      let imageUrls: string[] = [];
+      if (Array.isArray(order.image_urls)) {
+        imageUrls = order.image_urls;
+      } else if (typeof order.image_urls === 'string') {
+        imageUrls = [order.image_urls];
+      }
 
-        // Create hidden image element
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.src = imageUrl;
+      if (imageUrls.length === 0) {
+        alert("Order tidak memiliki gambar");
+        return;
+      }
 
-        await new Promise((resolve, reject) => {
-          img.onload = () => {
-            // Create canvas
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(img, 0, 0);
-            }
+      // Print all images in a single window
+      console.log(`Printing ${imageUrls.length} images`);
 
-            // Open print window
-            const printWindow = window.open('', '_blank');
-            if (printWindow) {
-              printWindow.document.write(`
-                <html>
-                <head><title>Print</title></head>
-                <body style="margin:0;padding:0;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-                  <img src="${imageUrl}" style="max-width:100%;max-height:100vh;" onload="setTimeout(function(){window.print();}, 500);" />
-                  <script>window.onafterprint = function(){ window.close(); }</script>
-                </body>
-                </html>
-              `);
-              printWindow.document.close();
-            } else {
-              alert("Popup blocked. Please allow popups for this site.");
-              reject(new Error("Popup blocked"));
-            }
-            resolve(null);
-          };
-          img.onerror = () => {
-            reject(new Error("Failed to load image"));
-          };
-        });
-
-        // Delay between prints
-        if (i < order.image_urls.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+      // Preload images before printing
+      const loadedImages: string[] = [];
+      for (const url of imageUrls) {
+        try {
+          const response = await fetch(url);
+          const blob = await response.blob();
+          const dataUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+          });
+          loadedImages.push(dataUrl);
+        } catch (err) {
+          console.error('Failed to load image:', url, err);
         }
       }
+
+      if (loadedImages.length === 0) {
+        alert("Gagal memuat gambar untuk print");
+        return;
+      }
+
+      // Create HTML with all images as data URLs
+      const imagesHtml = loadedImages.map((dataUrl) =>
+        `<img src="${dataUrl}" style="max-width:100%;max-height:100vh;margin:20px auto;display:block;page-break-after:always;" />`
+      ).join('');
+
+      // Open print window
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(`
+          <html>
+          <head><title>Print</title></head>
+          <body style="margin:0;padding:0;">
+            ${imagesHtml}
+            <script>
+              window.onload = function() {
+                setTimeout(function() { window.print(); }, 1000);
+              };
+              window.onafterprint = function() { window.close(); }
+            </script>
+          </body>
+          </html>
+        `);
+        printWindow.document.close();
+      } else {
+        alert("Popup blocked. Please allow popups for this site.");
+        return;
+      }
+
+      // Wait for print dialog
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
       // Mark as printed after printing
       const markRes = await fetch("/api/admin/mark-printed", {
@@ -499,14 +517,23 @@ export default function AdminPage() {
                       <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => {
-                            if (o.image_urls && o.image_urls.length > 0) {
-                              setPreviewImages(o.image_urls);
-                              setPreviewImage(o.image_urls[0]);
+                            if (o.image_urls) {
+                              // Handle image_urls - ensure it's an array
+                              let urls: string[] = [];
+                              if (Array.isArray(o.image_urls)) {
+                                urls = o.image_urls;
+                              } else if (typeof o.image_urls === 'string') {
+                                urls = [o.image_urls];
+                              }
+                              if (urls.length > 0) {
+                                setPreviewImages(urls);
+                                setPreviewImage(urls[0]);
+                              }
                             }
                           }}
                           className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                         >
-                          🔗 Open ({o.image_urls?.length || 0})
+                          🔗 Open ({Array.isArray(o.image_urls) ? o.image_urls.length : (typeof o.image_urls === 'string' ? 1 : 0)})
                         </button>
 
                         {/* Download button - Only for PAID orders */}
