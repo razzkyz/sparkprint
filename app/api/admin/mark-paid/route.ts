@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   const id = String(body?.id ?? "");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  // Fetch order to verify it's a cashier order and PENDING
+  // Fetch order to verify it's PENDING
   const { data: order, error: fetchErr } = await supabaseAdmin
     .from("print_orders")
     .select("*")
@@ -27,10 +27,6 @@ export async function POST(req: Request) {
 
   if (fetchErr || !order) {
     return NextResponse.json({ error: "order_not_found" }, { status: 404 });
-  }
-
-  if (order.payment_method !== "cashier") {
-    return NextResponse.json({ error: "not_a_cashier_order" }, { status: 400 });
   }
 
   if (order.status !== "PENDING") {

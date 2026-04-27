@@ -83,5 +83,15 @@ export async function GET(req: Request) {
   const { data, error } = await query;
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Log orders with null IDs for debugging
+  const nullIdOrders = data?.filter(o => !o.id) ?? [];
+  if (nullIdOrders.length > 0) {
+    console.error("[ADMIN ORDERS] Found orders with null IDs:", nullIdOrders);
+  }
+
+  // Log queue numbers for debugging
+  console.log("[ADMIN ORDERS] Queue numbers:", data?.map(o => ({ id: o.id, queue_number: o.queue_number })));
+
   return NextResponse.json({ ok: true, orders: data ?? [] });
 }

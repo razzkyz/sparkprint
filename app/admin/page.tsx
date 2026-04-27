@@ -147,7 +147,8 @@ export default function AdminPage() {
                 <html>
                 <head><title>Print</title></head>
                 <body style="margin:0;padding:0;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-                  <img src="${imageUrl}" style="max-width:100%;max-height:100vh;" onload="window.print();window.close();" />
+                  <img src="${imageUrl}" style="max-width:100%;max-height:100vh;" onload="setTimeout(function(){window.print();}, 500);" />
+                  <script>window.onafterprint = function(){ window.close(); }</script>
                 </body>
                 </html>
               `);
@@ -196,6 +197,11 @@ export default function AdminPage() {
   }
 
   async function markPaid(id: string) {
+    console.log("[markPaid] Order ID:", id);
+    if (!id) {
+      alert("Order ID tidak valid");
+      return;
+    }
     if (!confirm("Tandai pesanan ini sebagai SUDAH DIBAYAR?")) return;
 
     const r = await fetch("/api/admin/mark-paid", {
@@ -450,8 +456,8 @@ export default function AdminPage() {
               </thead>
 
               <tbody className="divide-y divide-gray-100">
-                {currentOrders.map((o) => (
-                  <tr key={o.id} className="hover:bg-gray-50/50 transition-colors">
+                {currentOrders.map((o, index) => (
+                  <tr key={o.id || index} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-700 font-bold text-sm">
                         {o.queue_number ?? "-"}
@@ -550,8 +556,8 @@ export default function AdminPage() {
                           </button>
                         )}
 
-                        {/* Cashier: Show Pay button for PENDING */}
-                        {activeTab === "cashier" && o.status === "PENDING" && (
+                        {/* Show Pay button for PENDING (both QRIS and Cashier) */}
+                        {o.status === "PENDING" && (
                           <button
                             onClick={() => markPaid(o.id)}
                             className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm transition-all"
