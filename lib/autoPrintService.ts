@@ -67,7 +67,7 @@ export async function autoPrintOrder(orderId: string): Promise<void> {
 
       // Strategy 1: Try server printer (DHS RX 1 via TCP)
       try {
-        console.log(`[AUTO-PRINT] Trying server printer (TCP)...`);
+        console.log(`[AUTO-PRINT] Trying server printer (TCP to ${process.env.PRINTER_HOST}:${process.env.PRINTER_PORT})...`);
         const serverPrinter = getPrinterService();
         await serverPrinter.printImage({
           imageUrl,
@@ -79,7 +79,7 @@ export async function autoPrintOrder(orderId: string): Promise<void> {
         console.log(`[AUTO-PRINT] ✅ Successfully printed via server printer`);
       } catch (serverPrintError) {
         lastError = serverPrintError instanceof Error ? serverPrintError : new Error(String(serverPrintError));
-        console.warn(`[AUTO-PRINT] Server printer failed, trying QZ Tray fallback...`, lastError);
+        console.warn(`[AUTO-PRINT] ❌ Server printer failed:`, lastError.message);
       }
 
       // Strategy 2: Fallback to QZ Tray (if server printer failed)

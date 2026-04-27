@@ -199,6 +199,7 @@ export class ServerPrinterService {
    */
   private async sendBuffer(data: Buffer): Promise<void> {
     if (!this.isOnline()) {
+      console.log("[PRINTER] Printer not online, attempting reconnection...");
       await this.connect();
     }
 
@@ -208,12 +209,22 @@ export class ServerPrinterService {
         return;
       }
 
+      // Set timeout for this write operation
+      const writeTimeout = setTimeout(() => {
+        this.isConnected = false;
+        this.socket?.destroy();
+        reject(new Error("Write timeout - printer may be offline"));
+      }, 5000);
+
       this.socket.write(data, (err) => {
+        clearTimeout(writeTimeout);
+        
         if (err) {
           console.error("[PRINTER] Write error:", err);
           this.isConnected = false;
           reject(err);
         } else {
+          console.log(`[PRINTER] Sent ${data.length} bytes`);
           resolve();
         }
       });
@@ -245,35 +256,53 @@ export class ServerPrinterService {
 
     try {
       console.log(
-        `[PRINTER] Starting print: Order=${orderId}, Size=${size}, Qty=${quantity}`
+        `[PRINTER] Starting print: Order=${orderId}, Size=${size}, Qty=${quantity}, URL=${imageUrl}`
       );
 
       // Download dan convert image to bitmap
       const imageBuffer = await this.downloadImage(imageUrl);
+      console.log(`[PRINTER] Downloaded image: ${imageBuffer.length} bytes`);
+
       const bitmapData = await this.convertImageToThermalBitmap(imageBuffer, size);
+      console.log(
+        `[PRINTER] Bitmap converted: ${bitmapData.data.length} bytes, ${bitmapData.width}x${bitmapData.height}`
+      );
 
       // Print multiple copies
       for (let i = 0; i < quantity; i++) {
-        const builder = new EscPosBuilder()
-          .init()
-          .setPrintMode()
-          .setPrintDensity(10) // Adjust for photo quality
-          .printImage(bitmapData.data, bitmapData.width, bitmapData.height)
-          .lineFeed(3)
-          .cut();
+        try {
+          const builder = new EscPosBuilder()
+            .init()
+            .setPrintMode()
+            .setPrintDensity(10); // Adjust for photo quality
 
-        await this.sendBuffer(builder.toBuffer());
-        console.log(`[PRINTER] Copy ${i + 1}/${quantity} printed`);
+          // Print the image
+          builder.printImage(bitmapData.data, bitmapData.width, bitmapData.height);
 
-        // Delay between copies
-        if (i < quantity - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          // Add spacing and cut
+          builder.lineFeed(3).cut();
+
+          const printBuffer = builder.toBuffer();
+          console.log(
+            `[PRINTER] Sending ${printBuffer.length} bytes to printer (copy ${i + 1}/${quantity})`
+          );
+
+          await this.sendBuffer(printBuffer);
+          console.log(`[PRINTER] Copy ${i + 1}/${quantity} sent successfully`);
+
+          // Delay between copies
+          if (i < quantity - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 1000)); // Increase delay
+          }
+        } catch (copyError) {
+          console.error(`[PRINTER] Error printing copy ${i + 1}:`, copyError);
+          throw copyError;
         }
       }
 
-      console.log(`[PRINTER] Successfully printed order ${orderId}`);
+      console.log(`[PRINTER] ✅ Successfully printed order ${orderId}`);
     } catch (error) {
-      console.error(`[PRINTER] Print failed for ${orderId}:`, error);
+      console.error(`[PRINTER] ❌ Print failed for ${orderId}:`, error);
       throw error;
     }
   }
@@ -308,31 +337,142 @@ export class ServerPrinterService {
     imageBuffer: Buffer,
     size: "2x6" | "4x6"
   ): Promise<{ data: Buffer; width: number; height: number }> {
-    // For now, return dummy data - ideally you'd use sharp or similar
-    // to properly convert the image
-    // DHS RX 1 specs:
-    // - 2x6: 384px × 576px @ 203 DPI
-    // - 4x6: 576px × 576px @ 203 DPI
+    // Dynamic import sharp (optional dependency)
+    let sharp;
+    try {
+      sharp = require("sharp");
+    } catch (e) {
+      console.warn("[PRINTER] sharp not installed, using fallback");
+      // Fallback: return basic bitmap
+      return this.createFallbackBitmap(size);
+    }
 
+    try {
+      // DHS RX 1 specs:
+      // - 2x6: 384px width × 576px height @ 203 DPI
+      // - 4x6: 576px width × 576px height @ 203 DPI
+      const width = size === "4x6" ? 576 : 384;
+      const height = 576;
+
+      // Step 1: Load image
+      const image = sharp(imageBuffer);
+      
+      // Step 2: Get metadata
+      const metadata = await image.metadata();
+      console.log(`[PRINTER] Image size: ${metadata.width}x${metadata.height}`);
+
+      // Step 3: Resize to printer dimensions (maintain aspect ratio, letterbox)
+      const resized = await image
+        .resize(width, height, {
+          fit: "contain", // maintain aspect ratio
+          background: { r: 255, g: 255, b: 255 }, // white background
+        })
+        .grayscale() // convert to grayscale
+        .raw() // get raw pixel data
+        .toBuffer({ resolveWithObject: true });
+
+      const { data: pixelData, info } = resized;
+      const { width: imgWidth, height: imgHeight, channels } = info;
+
+      console.log(
+        `[PRINTER] Resized to: ${imgWidth}x${imgHeight}, channels: ${channels}`
+      );
+
+      // Step 4: Dither & convert to 1-bit (black & white)
+      const ditheredBitmap = this.ditherImage(pixelData, imgWidth, imgHeight);
+
+      // Step 5: Pack into ESC/POS bitmap format
+      // ESC * format: width in bytes, height in dots
+      const bytesPerLine = Math.ceil(imgWidth / 8);
+      console.log(`[PRINTER] Bitmap: ${bytesPerLine} bytes per line, ${imgHeight} lines`);
+
+      return {
+        data: ditheredBitmap,
+        width: bytesPerLine,
+        height: imgHeight,
+      };
+    } catch (error) {
+      console.error("[PRINTER] Error converting image:", error);
+      // Fallback ke basic bitmap kalau ada error
+      return this.createFallbackBitmap(size);
+    }
+  }
+
+  /**
+   * Floyd-Steinberg dithering untuk convert grayscale ke 1-bit
+   */
+  private ditherImage(
+    pixelData: Buffer,
+    width: number,
+    height: number
+  ): Buffer {
+    const bytesPerLine = Math.ceil(width / 8);
+    const totalBytes = bytesPerLine * height;
+    const bitmap = Buffer.alloc(totalBytes, 0);
+
+    // Grayscale conversion (assume pixelData is already grayscale)
+    const grayscale = Buffer.alloc(width * height);
+    
+    // If channels = 1 (already grayscale)
+    if (pixelData.length === width * height) {
+      pixelData.copy(grayscale);
+    } else {
+      // If channels > 1, convert to grayscale (R*0.299 + G*0.587 + B*0.114)
+      for (let i = 0; i < width * height; i++) {
+        const r = pixelData[i * 3] || 0;
+        const g = pixelData[i * 3 + 1] || 0;
+        const b = pixelData[i * 3 + 2] || 0;
+        grayscale[i] = Math.round(r * 0.299 + g * 0.587 + b * 0.114);
+      }
+    }
+
+    // Floyd-Steinberg dithering
+    const error = Buffer.alloc(width * height, 0);
+    
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x;
+        const gray = grayscale[idx] + (error[idx] || 0);
+        
+        // Threshold at 128
+        const bit = gray > 128 ? 1 : 0;
+        
+        // Set pixel in bitmap
+        const byteIdx = y * bytesPerLine + Math.floor(x / 8);
+        const bitPos = 7 - (x % 8);
+        bitmap[byteIdx] |= (bit << bitPos);
+        
+        // Distribute error
+        const err = gray - (bit ? 255 : 0);
+        if (x + 1 < width) error[idx + 1] = (error[idx + 1] || 0) + (err * 7) / 16;
+        if (y + 1 < height) {
+          if (x - 1 >= 0) error[idx + width - 1] = (error[idx + width - 1] || 0) + (err * 3) / 16;
+          error[idx + width] = (error[idx + width] || 0) + (err * 5) / 16;
+          if (x + 1 < width) error[idx + width + 1] = (error[idx + width + 1] || 0) + (err * 1) / 16;
+        }
+      }
+    }
+
+    return bitmap;
+  }
+
+  /**
+   * Fallback bitmap untuk testing (simple striped pattern)
+   */
+  private createFallbackBitmap(size: "2x6" | "4x6"): { data: Buffer; width: number; height: number } {
     const width = size === "4x6" ? 576 : 384;
     const height = 576;
-
-    // Simplified: create a bitmap buffer
-    // In production, you'd:
-    // 1. Load image with sharp
-    // 2. Resize to width x height
-    // 3. Convert to grayscale
-    // 4. Dither to black & white
-    // 5. Pack pixels into bytes (1-bit per pixel)
-
     const bytesPerLine = Math.ceil(width / 8);
     const totalBytes = bytesPerLine * height;
 
-    // Create dummy black & white bitmap (for now)
-    const bitmapData = Buffer.alloc(totalBytes, 0xff); // white background
+    // Create alternating pattern untuk test
+    const bitmap = Buffer.alloc(totalBytes);
+    for (let i = 0; i < totalBytes; i++) {
+      bitmap[i] = i % 2 === 0 ? 0xaa : 0x55; // Alternating pattern
+    }
 
     return {
-      data: bitmapData,
+      data: bitmap,
       width: bytesPerLine,
       height,
     };

@@ -67,47 +67,79 @@ Admin login → Filter "Butuh print saja"
     ↓
 Admin klik "🖨️ Print" button di order
     ↓
-Server connect ke printer DHS RX 1
+Console: "Print job queued" ← Ini normal!
     ↓
-Print langsung, no wait
+Lihat console logs → cari [PRINTER] output
+    ↓
+Printer cetak (dalam 3-5 detik)
+    ↓
+Console: "✅ Successfully printed..."
     ↓
 Button berubah jadi "✅ Done"
-    ↓
-Order status → PRINTED
 ```
 
-### 2️⃣ Auto Print (Saat Pembayaran)
+### ⚠️ "Print job queued" artinya:
 
+- ✅ Request terima OK
+- ✅ Print trigger berhasil
+- **⏳ Tunggu 3-5 detik untuk lihat hasil**
+- ✅ Cek console logs untuk verify printer processing
+
+**Bukan berarti printer sudah cetak!** Lihat logs untuk confirm.
+
+---
+
+### Lihat Console Logs untuk Confirm
+
+Buka DevTools → Console tab → lihat logs:
+
+**Jika berhasil:**
 ```
-Customer scan QRIS
-    ↓
-Bayar via Doku
-    ↓
-Doku webhook → Server
-    ↓
-Order status → PAID
-    ↓
-Server trigger auto-print
-    ↓
-Printer cetak automatic
+[PRINTER] Downloaded image: 12345 bytes
+[PRINTER] Resized to: 384x576
+[PRINTER] Bitmap converted: 27648 bytes
+[PRINTER] Sent 27691 bytes to printer
+[PRINTER] ✅ Successfully printed
 ```
+
+**Jika gagal:**
+```
+[PRINTER] Connection refused
+[PRINTER] Cannot connect to printer
+```
+
+Kalau gagal → lihat [PRINTER_DEBUG.md](PRINTER_DEBUG.md) untuk solusi.
 
 ---
 
 ## 🧪 Troubleshooting (60 Detik)
 
-### ❌ Tombol Print tidak working
+### ❌ Muncul "Print job queued" tapi tidak cetak
 
-**Debug:**
-1. Admin panel login OK?
-2. Order status = PAID?
-3. Tombol "🖨️ Print" enabled?
+**Ini NORMAL! Artinya:**
+1. Server terima request ✅
+2. Print triggered ✅
+3. **Tunggu 3-5 detik** ⏳
+4. Lihat console logs untuk detail
 
-**Cek Console:**
-- Open DevTools (F12)
-- Console tab
-- Cek error message
-- Report di logs
+**Untuk verify:**
+
+Buka DevTools (F12) → Console → Cari logs:
+
+❌ **Jika lihat:**
+```
+[PRINTER] Error: connect ECONNREFUSED 192.168.1.254:9100
+```
+→ Printer tidak online atau port 9100 tidak accessible
+
+✅ **Jika lihat:**
+```
+[PRINTER] Sent 27691 bytes to printer
+[PRINTER] ✅ Successfully printed
+```
+→ Berhasil! Cek printer → keluar kertas
+
+---
 
 ### ❌ Printer tidak cetak
 
@@ -139,24 +171,37 @@ Ini normal! Print berjalan background.
 - Tunggu 5-10 detik
 - Cek manual print button → print-status
 
----
-
 ## 📊 Monitoring & Logs
 
 ### Lihat Print Activity
 
 **Local (npm run dev):**
 ```
-Lihat console output:
+Terminal output harus ada [PRINTER] logs:
+
 [PRINTER] Connected to 192.168.1.254:9100
-[AUTO-PRINT] Starting auto-print for order: order-123
-[AUTO-PRINT] Successfully printed order-123
+[PRINTER] Downloaded image: 12345 bytes
+[PRINTER] Resized to: 384x576
+[PRINTER] Bitmap converted: 27648 bytes
+[PRINTER] Sent 27691 bytes to printer
+[PRINTER] Copy 1/3 printed
+[PRINTER] ✅ Successfully printed order-123
 ```
 
 **Production (Vercel/Railway):**
-- Dashboard → Logs
-- Filter: `[PRINTER]` atau `[AUTO-PRINT]`
-- Track print success/failures
+- Dashboard → Logs tab
+- Filter search: `[PRINTER]`
+- Check for success or error messages
+
+### Detailed Debugging
+
+Check full logs → lihat [PRINTER_DEBUG.md](PRINTER_DEBUG.md)
+
+Includes:
+- Network connection troubleshooting
+- Port configuration
+- Image conversion issues
+- Performance optimization
 
 ---
 
