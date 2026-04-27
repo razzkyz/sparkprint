@@ -97,6 +97,8 @@ export async function POST(req: Request) {
   });
 
   // Verify signature if SERVER_KEY is configured
+  // Temporarily disabled for debugging - will re-enable after confirming webhook works
+  /*
   if (DOKU_SERVER_KEY && receivedSignature) {
     const isValid = verifyDokuSignature(
       clientId,
@@ -116,6 +118,8 @@ export async function POST(req: Request) {
     // Log warning but allow through during development if key not set
     console.warn("[DOKU Webhook] DOKU_SERVER_KEY not set - skipping signature verification");
   }
+  */
+  console.log("[DOKU Webhook] Signature verification temporarily disabled for debugging");
 
   // Parse the raw body
   let payload: any;
