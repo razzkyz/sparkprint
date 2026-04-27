@@ -47,6 +47,7 @@ export default function AdminPage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewImages, setPreviewImages] = useState<string[]>([]);
+  const [printingIds, setPrintingIds] = useState<Set<string>>(new Set());
 
   // Tab - temporarily disable cashier
   const [activeTab, setActiveTab] = useState<"qris" | "cashier">("qris");
@@ -106,18 +107,51 @@ export default function AdminPage() {
   }
 
   async function markPrinted(id: string) {
-    const r = await fetch("/api/admin/mark-printed", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader },
-      body: JSON.stringify({ id }),
-    });
+    setPrintingIds(prev => new Set(prev).add(id));
+    
+    try {
+      // Step 1: Trigger print (server-side)
+      const printRes = await fetch("/api/admin/manual-print", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify({ id }),
+      });
 
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      return alert(j?.error ?? `HTTP ${r.status}`);
+      const printJson = await printRes.json().catch(() => ({}));
+      
+      if (!printRes.ok) {
+        alert(`Print error: ${printJson?.error ?? `HTTP ${printRes.status}`}`);
+        return;
+      }
+
+      console.log("Print queued:", printJson);
+      
+      // Step 2: Mark as printed after small delay to ensure print started
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const markRes = await fetch("/api/admin/mark-printed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify({ id }),
+      });
+
+      const markJson = await markRes.json().catch(() => ({}));
+      if (!markRes.ok) {
+        alert(`Mark printed error: ${markJson?.error ?? `HTTP ${markRes.status}`}`);
+        return;
+      }
+
+      // Reload to show updated status
+      await load();
+    } catch (error) {
+      alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setPrintingIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
-
-    await load();
   }
 
   async function markPaid(id: string) {
@@ -479,15 +513,15 @@ export default function AdminPage() {
 
                         <button
                           onClick={() => markPrinted(o.id)}
-                          disabled={o.status !== "PAID"}
+                          disabled={o.status !== "PAID" || printingIds.has(o.id)}
                           className={[
                             "inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
-                            o.status !== "PAID"
+                            o.status !== "PAID" || printingIds.has(o.id)
                               ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                               : "bg-emerald-500 text-white hover:bg-emerald-600 shadow-sm",
                           ].join(" ")}
                         >
-                          {o.status === "PRINTED" ? "✅ Done" : "🖨️ Print"}
+                          {printingIds.has(o.id) ? "⏳ Printing..." : o.status === "PRINTED" ? "✅ Done" : "🖨️ Print"}
                         </button>
                       </div>
                     </td>

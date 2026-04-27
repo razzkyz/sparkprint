@@ -1,5 +1,6 @@
 // lib/autoPrintService.ts
 import { printService } from "./printService";
+import { getPrinterService } from "./serverPrinterService";
 import { supabaseAdmin } from "./supabaseAdmin";
 
 interface OrderToPrint {
@@ -53,34 +54,67 @@ export async function autoPrintOrder(orderId: string): Promise<void> {
         `[AUTO-PRINT] Printing order: ${orderId} | Customer: ${orderData.customer_name} | Size: ${orderData.size} | Qty: ${orderData.qty}`
       );
 
-      // Attempt to print
-      try {
-        // Print the first image from the array
-        const imageUrl = orderData.image_urls?.[0];
-        if (!imageUrl) {
-          console.error(`[AUTO-PRINT] No image URL found for order ${orderId}`);
-          return;
-        }
+      // Get image URL
+      const imageUrl = orderData.image_urls?.[0];
+      if (!imageUrl) {
+        console.error(`[AUTO-PRINT] No image URL found for order ${orderId}`);
+        return;
+      }
 
-        await printService.printImage({
+      // Attempt to print with fallback strategy
+      let printSuccess = false;
+      let lastError: Error | null = null;
+
+      // Strategy 1: Try server printer (DHS RX 1 via TCP)
+      try {
+        console.log(`[AUTO-PRINT] Trying server printer (TCP)...`);
+        const serverPrinter = getPrinterService();
+        await serverPrinter.printImage({
           imageUrl,
           quantity: orderData.qty,
           size: orderData.size,
           orderId,
         });
+        printSuccess = true;
+        console.log(`[AUTO-PRINT] ✅ Successfully printed via server printer`);
+      } catch (serverPrintError) {
+        lastError = serverPrintError instanceof Error ? serverPrintError : new Error(String(serverPrintError));
+        console.warn(`[AUTO-PRINT] Server printer failed, trying QZ Tray fallback...`, lastError);
+      }
 
+      // Strategy 2: Fallback to QZ Tray (if server printer failed)
+      if (!printSuccess) {
+        try {
+          console.log(`[AUTO-PRINT] Trying QZ Tray client printer...`);
+          await printService.printImage({
+            imageUrl,
+            quantity: orderData.qty,
+            size: orderData.size,
+            orderId,
+          });
+          printSuccess = true;
+          console.log(`[AUTO-PRINT] ✅ Successfully printed via QZ Tray`);
+        } catch (qzError) {
+          lastError = qzError instanceof Error ? qzError : new Error(String(qzError));
+          console.error(`[AUTO-PRINT] QZ Tray also failed`, lastError);
+        }
+      }
+
+      if (printSuccess) {
         console.log(`[AUTO-PRINT] Successfully printed order ${orderId}`);
-
         // Optionally update order status to PRINTED automatically
         // Uncomment the following lines if you want to auto-mark as printed
         // await supabaseAdmin
         //   .from("print_orders")
         //   .update({ status: "PRINTED" })
         //   .eq("id", orderId);
-      } catch (printError) {
-        console.error(`[AUTO-PRINT] Failed to print order ${orderId}:`, printError);
+      } else {
+        console.error(
+          `[AUTO-PRINT] Failed to print order ${orderId} with all strategies:`,
+          lastError?.message
+        );
+        // Log to database for admin to see
         // You can send email notification here about print failure
-        // Or save error to database for manual intervention
       }
     } catch (error) {
       console.error(`[AUTO-PRINT] Error processing order ${orderId}:`, error);
