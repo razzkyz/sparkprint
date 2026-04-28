@@ -92,7 +92,7 @@ export default function KioskPage() {
     setName("");
     setEmail("");
     setQueueNumber("");
-    setUploadedFiles([]);
+    setUploadedUrls([]);
     setPreviewUrls([]);
     setQty(1);
     setSize("4x6");
