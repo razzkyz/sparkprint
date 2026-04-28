@@ -1,0 +1,3 @@
+# Exclude Supabase Edge Functions from Next.js build
+# Edge Functions use Deno runtime, not Node.js
+supabase/

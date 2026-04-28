@@ -1,0 +1,6 @@
+# Exclude Supabase Edge Functions from Vercel build
+# Edge Functions are deployed separately to Supabase
+supabase/
+WEBHOOK_*.md
+MIGRATION_GUIDE.md
+DEPLOYMENT_CHECKLIST.md
