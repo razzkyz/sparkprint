@@ -2,7 +2,6 @@
 
 import Script from "next/script";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
 
 declare global {
   interface Window {
