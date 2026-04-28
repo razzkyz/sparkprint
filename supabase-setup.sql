@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS public.print_orders (
   -- Photo info
   fotoshare_token TEXT, -- Legacy field, not used
   image_urls TEXT[], -- Array of public URLs to uploaded photos (changed from single image_url)
+  photo_sizes TEXT[], -- Array of sizes for each photo ('4x6' or '2x6'), same index as image_urls
   
   -- Order details
   size TEXT NOT NULL DEFAULT '4x6', -- '4x6' or '2x6'
@@ -69,13 +70,18 @@ CREATE INDEX IF NOT EXISTS idx_print_orders_customer_email ON public.print_order
 -- 5. MIGRATION: Add image_urls column and migrate existing data
 ALTER TABLE public.print_orders ADD COLUMN IF NOT EXISTS image_urls TEXT[];
 
+-- Add photo_sizes column for per-photo size tracking
+ALTER TABLE public.print_orders ADD COLUMN IF NOT EXISTS photo_sizes TEXT[];
+
 -- Migrate existing image_url to image_urls array
 UPDATE public.print_orders 
 SET image_urls = ARRAY[image_url] 
 WHERE image_url IS NOT NULL AND image_urls IS NULL;
 
--- Drop old image_url column after migration (optional, comment out if want to keep)
--- ALTER TABLE public.print_orders DROP COLUMN IF EXISTS image_url;
+-- Initialize photo_sizes for existing orders (default to size value)
+UPDATE public.print_orders 
+SET photo_sizes = ARRAY[size] 
+WHERE photo_sizes IS NULL AND size IS NOT NULL;
 
 -- 5. ENABLE ROW LEVEL SECURITY
 ALTER TABLE public.print_orders ENABLE ROW LEVEL SECURITY;

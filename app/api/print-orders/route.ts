@@ -227,8 +227,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Photo files are required" }, { status: 400 });
     }
 
-    const qty = Number(formData.get("qty") ?? 1);
-    const size = String(formData.get("size") ?? "4x6") as SizeKey;
+    // Parse per-photo sizes from FormData
+    const photoSizesJson = String(formData.get("photo_sizes") ?? "[]");
+    let photoSizes: SizeKey[] = [];
+    try {
+      photoSizes = JSON.parse(photoSizesJson) as SizeKey[];
+    } catch (e) {
+      console.error("Failed to parse photo_sizes:", e);
+      return NextResponse.json({ error: "Invalid photo_sizes format" }, { status: 400 });
+    }
+
+    if (photoSizes.length !== photoFiles.length) {
+      return NextResponse.json({ error: "Photo sizes count mismatch" }, { status: 400 });
+    }
+
+    // Validate all sizes
+    if (!photoSizes.every(size => ["4x6", "2x6"].includes(size))) {
+      return NextResponse.json({ error: "Invalid size in photo_sizes" }, { status: 400 });
+    }
+
     const queue_number = Number(formData.get("queue_number") ?? 0);
     const customer_name = String(formData.get("customer_name") ?? "").trim().slice(0, 40);
     const customer_email = String(formData.get("customer_email") ?? "").trim().toLowerCase().slice(0, 120);
@@ -240,12 +257,6 @@ export async function POST(req: Request) {
     }
     if (!customer_email || !isValidEmail(customer_email)) {
       return NextResponse.json({ error: "Valid email is required" }, { status: 400 });
-    }
-    if (qty < 1 || qty > 100) {
-      return NextResponse.json({ error: "Quantity must be between 1-100" }, { status: 400 });
-    }
-    if (!["4x6", "2x6"].includes(size)) {
-      return NextResponse.json({ error: "Invalid size" }, { status: 400 });
     }
     if (queue_number < 1 || queue_number > 999) {
       return NextResponse.json({ error: "Queue number must be between 1-999" }, { status: 400 });
@@ -295,9 +306,9 @@ export async function POST(req: Request) {
 
     console.log("[API] All files uploaded. Total:", imageUrls.length);
 
-    // Calculate amount
+    // Calculate amount: sum of price per photo size
     const unitPrice = 10000;
-    const amount = unitPrice * qty;
+    const amount = photoSizes.reduce((sum) => sum + unitPrice, 0);
 
     // Generate order ID
     const doku_order_id = `SP-${Date.now()}-${Math.random()
@@ -314,8 +325,9 @@ export async function POST(req: Request) {
         customer_email,
         fotoshare_token: "",
         image_urls: imageUrls,
-        size,
-        qty,
+        photo_sizes: photoSizes,
+        qty: photoSizes.length, // Total number of photos
+        size: photoSizes[0] || "4x6", // Default to first size (for backward compatibility)
         amount,
         status: "PENDING",
         queue_number,
@@ -339,8 +351,8 @@ export async function POST(req: Request) {
       amount,
       customer_name,
       customer_email,
-      size,
-      qty
+      photoSizes[0] || "4x6",
+      photoSizes.length
     );
 
     if (!payment_url) {
@@ -351,18 +363,18 @@ export async function POST(req: Request) {
 
     // Send confirmation email
     try {
+      const items = photoSizes.map((size, idx) => ({
+        name: `Photo ${idx + 1} (${size})`,
+        qty: 1,
+        price: unitPrice,
+      }));
+
       await sendOrderEmail({
         to: customer_email,
         name: customer_name,
         orderId: doku_order_id,
         amount,
-        items: [
-          {
-            name: `Photo Print ${size} (${qty}x)`,
-            qty: qty,
-            price: unitPrice,
-          },
-        ],
+        items,
         type: "ORDER_PLACED",
         queueNumber: queue_number,
       });

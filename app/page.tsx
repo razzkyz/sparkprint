@@ -40,8 +40,8 @@ export default function KioskPage() {
   // Photo upload (store File objects after compression)
   const [uploadedUrls, setUploadedUrls] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
-  const [qty, setQty] = useState(1);
-  const [size, setSize] = useState<SizeKey>("4x6");
+  // Per-photo size selection: one size per photo
+  const [photoSizes, setPhotoSizes] = useState<SizeKey[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [dokuReady, setDokuReady] = useState(false);
@@ -63,17 +63,12 @@ export default function KioskPage() {
   // Keep timeout id so we can clear on manual close
   const successTimerRef = useRef<number | null>(null);
 
-  // Auto-set quantity based on number of uploaded images
-  useEffect(() => {
-    if (uploadedUrls.length > 0) {
-      setQty(uploadedUrls.length);
-    }
-  }, [uploadedUrls.length]);
-
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const total = useMemo(() => unitPrice(size) * qty, [qty, size]);
-  const currentSizeOption = SIZE_OPTIONS.find((s) => s.key === size)!;
+  // Calculate total: sum of (price per size * 1 per photo)
+  const total = useMemo(() => {
+    return photoSizes.reduce((sum, size) => sum + unitPrice(size), 0);
+  }, [photoSizes]);
 
   // NEXT_PUBLIC_ prefix required for client-side access in Next.js
   const dokuScriptUrl = process.env.NEXT_PUBLIC_DOKU_IS_PRODUCTION === "true"
@@ -93,8 +88,7 @@ export default function KioskPage() {
     setQueueNumber("");
     setUploadedUrls([]);
     setPreviewUrls([]);
-    setQty(1);
-    setSize("4x6");
+    setPhotoSizes([]);
     setTimeout(() => fileInputRef.current?.focus(), 50);
   }
 
@@ -188,6 +182,8 @@ export default function KioskPage() {
 
       setUploadedUrls(prev => [...prev, ...compressedFiles]);
       setPreviewUrls(prev => [...prev, ...newPreviews]);
+      // Initialize size for each new photo as 4x6
+      setPhotoSizes(prev => [...prev, ...compressedFiles.map(() => "4x6" as SizeKey)]);
 
       setStatus({
         kind: "ok",
@@ -206,6 +202,7 @@ export default function KioskPage() {
   function removePhoto(index: number) {
     setUploadedUrls(prev => prev.filter((_, i) => i !== index));
     setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+    setPhotoSizes(prev => prev.filter((_, i) => i !== index));
   }
 
   function closeSuccessAndReset() {
@@ -225,7 +222,7 @@ export default function KioskPage() {
     isValidEmail(email.trim()) &&
     isValidQueueNumber &&
     uploadedUrls.length > 0 &&
-    qty >= 1;
+    photoSizes.length === uploadedUrls.length;
 
   async function pay() {
     if (!name.trim()) {
@@ -245,8 +242,8 @@ export default function KioskPage() {
       fileInputRef.current?.focus();
       return;
     }
-    if (qty < 1) {
-      setStatus({ kind: "warn", text: "Pilih jumlah print dulu (minimal 1)." });
+    if (photoSizes.length !== uploadedUrls.length) {
+      setStatus({ kind: "warn", text: "Pilih ukuran untuk semua foto." });
       return;
     }
 
@@ -264,8 +261,8 @@ export default function KioskPage() {
       uploadedUrls.forEach((file) => {
         formData.append("photos", file);
       });
-      formData.append("qty", qty.toString());
-      formData.append("size", size);
+      // Send per-photo sizes array as JSON string
+      formData.append("photo_sizes", JSON.stringify(photoSizes));
       formData.append("queue_number", queueNum.toString());
       formData.append("customer_name", name.trim());
       formData.append("customer_email", email.trim());
@@ -595,27 +592,71 @@ export default function KioskPage() {
                           onClick={() => {
                             setUploadedUrls([]);
                             setPreviewUrls([]);
+                            setPhotoSizes([]);
                           }}
                           className="text-xs text-red-600 hover:text-red-700"
                         >
                           Hapus semua
                         </button>
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-4">
                         {previewUrls.map((url, index) => (
-                          <div key={index} className="relative group">
-                            <img
-                              src={url}
-                              alt={`Preview ${index + 1}`}
-                              className="w-full h-24 object-cover border border-gray-200 rounded-lg"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removePhoto(index)}
-                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              ✕
-                            </button>
+                          <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                            <div className="flex gap-4">
+                              {/* Photo preview */}
+                              <div className="relative group">
+                                <img
+                                  src={url}
+                                  alt={`Preview ${index + 1}`}
+                                  className="w-24 h-32 object-cover border border-gray-200 rounded-lg flex-shrink-0"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removePhoto(index)}
+                                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+
+                              {/* Size selection for this photo */}
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-gray-700 mb-2">Foto {index + 1} - Ukuran:</div>
+                                <div className="space-y-2">
+                                  {SIZE_OPTIONS.map((opt) => (
+                                    <label
+                                      key={opt.key}
+                                      className={[
+                                        "flex cursor-pointer items-center gap-2 rounded-lg border-2 px-3 py-2 transition-all",
+                                        photoSizes[index] === opt.key
+                                          ? "border-[#ff4b86] bg-pink-50 shadow-sm"
+                                          : "border-gray-200 bg-white hover:border-gray-300",
+                                      ].join(" ")}
+                                    >
+                                      <input
+                                        type="radio"
+                                        name={`size-${index}`}
+                                        value={opt.key}
+                                        checked={photoSizes[index] === opt.key}
+                                        onChange={() => {
+                                          const newSizes = [...photoSizes];
+                                          newSizes[index] = opt.key;
+                                          setPhotoSizes(newSizes);
+                                        }}
+                                        className="h-4 w-4 text-[#ff4b86] accent-[#ff4b86]"
+                                      />
+                                      <div className="flex-1">
+                                        <div className="text-xs font-semibold text-gray-900">{opt.label}</div>
+                                        <div className="text-xs text-gray-500">{opt.desc}</div>
+                                      </div>
+                                      <div className="text-xs font-semibold text-gray-900">
+                                        Rp{formatIDR(opt.price)}
+                                      </div>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -624,52 +665,26 @@ export default function KioskPage() {
                 </div>
               </div>
 
-              <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                {/* Size selection */}
-                <div className="rounded-2xl bg-gray-50 border border-gray-200 p-4">
-                  <div className="text-sm font-medium text-gray-700">Choose Photo Size:</div>
-                  <div className="mt-3 space-y-2">
-                    {SIZE_OPTIONS.map((opt) => (
-                      <label
-                        key={opt.key}
-                        className={[
-                          "flex cursor-pointer items-center gap-3 rounded-xl border-2 px-4 py-3 transition-all",
-                          size === opt.key
-                            ? "border-[#ff4b86] bg-pink-50 shadow-sm"
-                            : "border-gray-200 bg-white hover:border-gray-300",
-                        ].join(" ")}
-                      >
-                        <input
-                          type="radio"
-                          name="size"
-                          value={opt.key}
-                          checked={size === opt.key}
-                          onChange={() => setSize(opt.key)}
-                          className="h-4 w-4 text-[#ff4b86] accent-[#ff4b86]"
-                        />
-                        <div className="flex-1">
-                          <div className="text-sm font-semibold text-gray-900">{opt.label}</div>
-                          <div className="text-xs text-gray-500">{opt.desc}</div>
+              {/* Payment summary */}
+              {uploadedUrls.length > 0 && photoSizes.length === uploadedUrls.length && (
+                <div className="mt-6 rounded-2xl bg-gradient-to-r from-pink-50 to-rose-50 border border-pink-200 p-4">
+                  <div className="grid gap-3">
+                    {photoSizes.map((size, idx) => {
+                      const opt = SIZE_OPTIONS.find(s => s.key === size)!;
+                      return (
+                        <div key={idx} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-700">Foto {idx + 1}: <span className="font-medium">{opt.label}</span></span>
+                          <span className="font-semibold text-gray-900">Rp{formatIDR(opt.price)}</span>
                         </div>
-                        <div className="text-sm font-semibold text-gray-900">
-                          Rp{formatIDR(opt.price)}
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Qty */}
-                <div className="rounded-2xl bg-gray-50 border border-gray-200 p-4">
-                  <div className="text-sm font-medium text-gray-700">Quantity</div>
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <div className="flex-1 text-center">
-                      <div className="text-4xl font-bold text-gray-900">{qty}</div>
-                      <div className="text-xs text-gray-500">Otomatis berdasarkan jumlah gambar</div>
+                      );
+                    })}
+                    <div className="border-t border-pink-200 pt-3 mt-2 flex items-center justify-between">
+                      <span className="font-bold text-gray-900">Total</span>
+                      <span className="text-lg font-bold text-[#ff4b86]">Rp{formatIDR(total)}</span>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Payment Method - Only QRIS/E-Wallet via Doku */}
               <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

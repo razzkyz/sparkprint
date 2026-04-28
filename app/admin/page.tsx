@@ -10,6 +10,7 @@ type Order = {
   customer_name: string | null;
   customer_email: string | null;
   image_urls: string[];
+  photo_sizes?: string[]; // Per-photo sizes array
   size: string;
   qty: number;
   amount: number;
@@ -185,19 +186,12 @@ export default function AdminPage() {
       console.log(`[PRINT] Successfully loaded ${loadedImages.length} image(s)`);
 
       // ============= CALCULATE PAGE DIMENSIONS =============
-      // 2x6 = 2 inches wide x 6 inches tall
-      // 4x6 = 4 inches wide x 6 inches tall
-      // At 96 DPI (screen): 2x6 = 192x576px, 4x6 = 384x576px
-      const pageWidth = order.size === "2x6" ? 2 : 4; // inches
-      const pageHeight = 6; // inches
-      const dpi = 96; // screen DPI for display
-      const widthPx = pageWidth * dpi;
-      const heightPx = pageHeight * dpi;
+      // Get sizes for each photo, fallback to order.size if photo_sizes not available
+      const photoSizes = order.photo_sizes && order.photo_sizes.length > 0 
+        ? order.photo_sizes 
+        : loadedImages.map(() => order.size); // Fallback for old orders
 
-      console.log(`[PRINT] Page dimensions for ${order.size}:`, {
-        inches: `${pageWidth}x${pageHeight}`,
-        pixels: `${widthPx}x${heightPx}`,
-      });
+      console.log(`[PRINT] Photo sizes:`, photoSizes);
 
       // ============= CREATE PRINT WINDOW =============
       const printWindow = window.open('', '_blank');
@@ -206,11 +200,18 @@ export default function AdminPage() {
         return;
       }
 
-      // Generate HTML with all images, each on separate page
+      // Generate pages with per-photo sizing
       const imagesHtml = loadedImages
         .map((dataUrl, idx) => {
+          const photoSize = photoSizes[idx] || order.size || "4x6";
+          const pageWidth = photoSize === "2x6" ? 2 : 4; // inches
+          const pageHeight = 6; // inches
+          const dpi = 96; // screen DPI for display
+          const widthPx = pageWidth * dpi;
+          const heightPx = pageHeight * dpi;
+
           return `
-            <div class="print-page" id="page-${idx}">
+            <div class="print-page" id="page-${idx}" data-size="${photoSize}" style="width: ${widthPx}px; height: ${heightPx}px;">
               <img 
                 src="${dataUrl}" 
                 class="print-image"
@@ -229,7 +230,7 @@ export default function AdminPage() {
         <head>
           <meta charset="UTF-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-          <title>Print - ${order.size === "2x6" ? "2×6" : "4×6"}</title>
+          <title>Print - Multi-size</title>
           <style>
             /* Reset all margins and padding */
             * {
@@ -247,8 +248,6 @@ export default function AdminPage() {
 
             /* Print page container - one per image */
             .print-page {
-              width: ${widthPx}px;
-              height: ${heightPx}px;
               page-break-after: always;
               page-break-inside: avoid;
               display: flex;
@@ -257,6 +256,8 @@ export default function AdminPage() {
               background: white;
               overflow: hidden;
               position: relative;
+              margin: 0;
+              padding: 0;
             }
 
             /* Image fills entire page, no white borders */
@@ -268,12 +269,22 @@ export default function AdminPage() {
               display: block;
             }
 
-            /* Print-specific styles */
+            /* Print-specific styles - per page size */
             @page {
-              /* Paper size: match the print size */
-              size: ${pageWidth}in ${pageHeight}in;
               margin: 0;
               padding: 0;
+            }
+
+            /* 4x6 pages */
+            .print-page[data-size="4x6"] {
+              width: 384px;
+              height: 576px;
+            }
+
+            /* 2x6 pages */
+            .print-page[data-size="2x6"] {
+              width: 192px;
+              height: 576px;
             }
 
             @media print {
@@ -289,9 +300,25 @@ export default function AdminPage() {
                 height: 100%;
               }
 
-              .print-page {
-                width: 100%;
-                height: 100%;
+              /* 4x6 in print */
+              .print-page[data-size="4x6"] {
+                width: 4in;
+                height: 6in;
+                margin: 0 !important;
+                padding: 0 !important;
+                page-break-after: always;
+                page-break-before: avoid;
+                page-break-inside: avoid;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: white;
+              }
+
+              /* 2x6 in print */
+              .print-page[data-size="2x6"] {
+                width: 2in;
+                height: 6in;
                 margin: 0 !important;
                 padding: 0 !important;
                 page-break-after: always;
@@ -358,14 +385,15 @@ export default function AdminPage() {
           <script>
             window.imageLoadCount = 0;
             window.totalImages = ${loadedImages.length};
-            window.pageSize = "${order.size}";
+            window.photoSizes = ${JSON.stringify(photoSizes)};
 
             function checkAllImagesLoaded() {
               const status = document.getElementById('status');
               status.textContent = \`Loading images: \${window.imageLoadCount}/\${window.totalImages}\`;
 
               if (window.imageLoadCount >= window.totalImages) {
-                console.log('[PRINT] ✅ All images loaded, ready to print');
+                console.log('[PRINT] ✅ All images loaded');
+                console.log('[PRINT] Photo sizes:', window.photoSizes);
                 document.getElementById('loading').remove();
                 setTimeout(function() {
                   window.print();

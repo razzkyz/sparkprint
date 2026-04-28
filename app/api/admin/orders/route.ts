@@ -14,8 +14,8 @@ const ALLOWED_SORT_DIR = new Set(["desc", "asc"]);
 const ALLOWED_PAYMENT_METHOD = new Set(["ALL", "qris", "cashier"]);
 
 export async function GET(req: Request) {
-  // Temporarily disable auth for development
-  // if (!isAuthed(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // Enable authentication
+  if (!isAuthed(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const url = new URL(req.url);
 
