@@ -38,8 +38,8 @@ export default function KioskPage() {
   const [email, setEmail] = useState("");
   const [queueNumber, setQueueNumber] = useState("");
 
-  // Photo upload (store URLs directly from Supabase, not Files)
-  const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
+  // Photo upload (store File objects after compression)
+  const [uploadedUrls, setUploadedUrls] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [qty, setQty] = useState(1);
   const [size, setSize] = useState<SizeKey>("4x6");
@@ -147,54 +147,6 @@ export default function KioskPage() {
     });
   }
 
-  // Upload image langsung ke Supabase Storage
-  async function uploadToSupabase(compressedBlob: Blob, originalName: string): Promise<string> {
-    try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-      if (!supabaseUrl || !supabaseKey) {
-        throw new Error(`Missing Supabase config: URL=${!!supabaseUrl}, KEY=${!!supabaseKey}`);
-      }
-
-      console.log("[Upload] Supabase URL:", supabaseUrl);
-      console.log("[Upload] Starting upload:", originalName, "Size:", compressedBlob.size);
-
-      const supabase = createClient(supabaseUrl, supabaseKey);
-
-      const timestamp = Date.now();
-      const randomId = Math.random().toString(36).substring(2, 8);
-      const fileName = `${timestamp}-${randomId}-${originalName}`;
-
-      console.log("[Upload] File name:", fileName);
-
-      const { data, error } = await supabase.storage
-        .from("photos")
-        .upload(fileName, compressedBlob, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      if (error) {
-        throw new Error(`Upload failed: ${error.message}`);
-      }
-
-      console.log("[Upload] File uploaded:", data.path);
-
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from("photos")
-        .getPublicUrl(data.path);
-
-      console.log("[Upload] Public URL:", urlData.publicUrl);
-      return urlData.publicUrl;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Upload error";
-      console.error("[Upload] Error:", errorMsg);
-      throw new Error(errorMsg);
-    }
-  }
-
   // Handle photo upload
   async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
@@ -209,7 +161,7 @@ export default function KioskPage() {
       return;
     }
 
-    // Validate file sizes (max 50MB each - generous)
+    // Validate file sizes (max 50MB each)
     const maxSize = 50 * 1024 * 1024;
     const oversizedFiles = files.filter(f => f.size > maxSize);
     if (oversizedFiles.length > 0) {
@@ -218,26 +170,29 @@ export default function KioskPage() {
       return;
     }
 
-    setStatus({ kind: "info", text: `Mengkompresi dan mengupload ${files.length} foto...` });
+    setStatus({ kind: "info", text: `Mengkompresi foto (${files.length})...` });
 
     try {
       // Compress semua files
       const compressedBlobs = await Promise.all(files.map(f => compressImage(f)));
 
-      // Create previews using object URLs (lightweight, no base64 encoding)
+      // Create previews using object URLs (lightweight)
       const newPreviews = compressedBlobs.map(blob => URL.createObjectURL(blob));
 
-      // Upload ke Supabase (parallel, langsung bypass Vercel API limit)
-      const uploadUrls = await Promise.all(
-        files.map((file, idx) => uploadToSupabase(compressedBlobs[idx], file.name))
-      );
+      // Create File objects from compressed blobs
+      const compressedFiles = compressedBlobs.map((blob, idx) => {
+        const originalName = files[idx].name.replace(/\.[^.]+$/, '.webp');
+        return new File([blob], originalName, { type: 'image/webp' });
+      });
 
-      setUploadedUrls(prev => [...prev, ...uploadUrls]);
+      console.log('[Upload] Compressed files:', compressedFiles.map(f => `${f.name} (${(f.size/1024/1024).toFixed(2)}MB)`));
+
+      setUploadedUrls(prev => [...prev, ...compressedFiles]);
       setPreviewUrls(prev => [...prev, ...newPreviews]);
 
       setStatus({
         kind: "ok",
-        text: `${files.length} foto berhasil diupload. Total: ${uploadedUrls.length + files.length} foto.`,
+        text: `${files.length} foto ditambahkan. Total: ${uploadedUrls.length + compressedFiles.length} foto.`,
       });
       e.target.value = "";
     } catch (err) {
@@ -302,22 +257,24 @@ export default function KioskPage() {
     }
 
     setLoading(true);
-    setStatus({ kind: "info", text: "Membuat pesanan..." });
+    setStatus({ kind: "info", text: "Mengupload foto dan membuat pesanan..." });
 
     try {
-      // Send JSON dengan image URLs (bypass Vercel API limit)
+      // Create FormData dengan compressed files
+      const formData = new FormData();
+      uploadedUrls.forEach((file) => {
+        formData.append("photos", file);
+      });
+      formData.append("qty", qty.toString());
+      formData.append("size", size);
+      formData.append("queue_number", queueNum.toString());
+      formData.append("customer_name", name.trim());
+      formData.append("customer_email", email.trim());
+      formData.append("payment_method", "qris");
+
       const r = await fetch("/api/print-orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageUrls: uploadedUrls,
-          qty: qty,
-          size: size,
-          queue_number: queueNum,
-          customer_name: name.trim(),
-          customer_email: email.trim(),
-          payment_method: "qris",
-        }),
+        body: formData,
       });
 
       const j = await r.json().catch(() => ({}));
