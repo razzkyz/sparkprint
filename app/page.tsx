@@ -12,12 +12,12 @@ declare global {
 type SizeKey = "4x6" | "2x6";
 
 const SIZE_OPTIONS: { key: SizeKey; label: string; desc: string; price: number }[] = [
-  { key: "4x6", label: "4×6", desc: "Standard photo", price: 10000 },
-  { key: "2x6", label: "2×6", desc: "Photo strip", price: 10000 },
+  { key: "4x6", label: "4×6", desc: "Standard photo", price: 1000 },
+  { key: "2x6", label: "2×6", desc: "Photo strip", price: 1000 },
 ];
 
 function unitPrice(size: SizeKey) {
-  return SIZE_OPTIONS.find((s) => s.key === size)?.price ?? 10000;
+  return SIZE_OPTIONS.find((s) => s.key === size)?.price ?? 1000;
 }
 
 function formatIDR(n: number) {
@@ -307,27 +307,57 @@ export default function KioskPage() {
       // Open Doku checkout if payment URL exists
       setStatus({ kind: "info", text: "Membuka halaman pembayaran DOKU..." });
 
+      console.log("[PAYMENT] Payment URL received:", payment_url);
+      console.log("[PAYMENT] Order ID (UUID):", order_id);
+      console.log("[PAYMENT] DOKU Order ID (Invoice):", doku_order_id);
+
+      // Add error handler for window errors (catches DOKU SDK 404 errors)
+      const handleDokuError = (event: ErrorEvent) => {
+        if (event.message?.includes("404") || event.filename?.includes("checkout.doku.com")) {
+          console.warn("[DOKU SDK] Non-critical error caught:", event.message);
+          // Don't rethrow - let polling handle status checking instead
+          return true;
+        }
+      };
+
+      window.addEventListener("error", handleDokuError);
+
+      // Load DOKU checkout
       if (typeof window.loadJokulCheckout === "function") {
-        window.loadJokulCheckout(payment_url);
+        try {
+          console.log("[PAYMENT] Loading DOKU Jokul Checkout...");
+          window.loadJokulCheckout(payment_url);
+        } catch (err) {
+          console.error("[PAYMENT] Failed to load DOKU Jokul Checkout:", err);
+          // Fallback to direct redirect
+          window.location.href = payment_url;
+        }
       } else {
+        console.warn("[PAYMENT] DOKU SDK not available, redirecting to URL directly");
         window.location.href = payment_url;
       }
 
-      // Poll to check payment status
+      // Poll to check payment status from our backend (more reliable)
+      let pollAttempts = 0;
+      const maxPollAttempts = 100; // 5 minutes at 3-second intervals
+      
       const pollInterval = setInterval(async () => {
+        pollAttempts++;
         try {
-          console.log("[POLL] Checking order:", order_id);
+          console.log(`[POLL] Attempt ${pollAttempts}/${maxPollAttempts} - Checking order:`, order_id);
           const checkRes = await fetch(`/api/orders/${order_id}`);
           if (checkRes.ok) {
             const orderData = await checkRes.json();
-            console.log("[POLL] Order status:", orderData.status);
+            console.log("[POLL] Order status from DB:", orderData.status);
             if (orderData.status === "PAID") {
               clearInterval(pollInterval);
-              // Close DOKU modal and show success
-              window.location.href = window.location.href;
+              window.removeEventListener("error", handleDokuError);
+              console.log("[POLL] ✓ Payment confirmed! Redirecting...");
+              // Reload to show success page
+              setTimeout(() => window.location.href = window.location.href, 500);
             }
           } else {
-            console.log("[POLL] Order not found, trying doku_order_id:", doku_order_id);
+            console.log("[POLL] Order not found by ID, trying doku_order_id:", doku_order_id);
             // Fallback: try using doku_order_id
             const fallbackRes = await fetch(`/api/orders/${doku_order_id}`);
             if (fallbackRes.ok) {
@@ -335,18 +365,30 @@ export default function KioskPage() {
               console.log("[POLL] Found by doku_order_id, status:", orderData.status);
               if (orderData.status === "PAID") {
                 clearInterval(pollInterval);
-                window.location.href = window.location.href;
+                window.removeEventListener("error", handleDokuError);
+                console.log("[POLL] ✓ Payment confirmed via doku_order_id! Redirecting...");
+                setTimeout(() => window.location.href = window.location.href, 500);
               }
             }
           }
         } catch (err) {
-          console.error("Poll payment status error:", err);
+          console.error("[POLL] Error checking payment status:", err);
+        }
+        
+        // Stop polling after max attempts
+        if (pollAttempts >= maxPollAttempts) {
+          clearInterval(pollInterval);
+          window.removeEventListener("error", handleDokuError);
+          console.warn("[POLL] Max polling attempts reached, stopping.");
         }
       }, 3000); // Check every 3 seconds
 
-      // Stop polling after 5 minutes
+      // Stop polling after 5 minutes (also set as backup)
       setTimeout(() => {
-        clearInterval(pollInterval);
+        if (pollAttempts < maxPollAttempts) {
+          clearInterval(pollInterval);
+          window.removeEventListener("error", handleDokuError);
+        }
         setStatus({
           kind: "warn",
           text: `Pembayaran pending. Order ID: ${doku_order_id}. Selesaikan pembayaran di halaman DOKU.`,

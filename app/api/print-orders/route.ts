@@ -184,7 +184,7 @@ async function createDokuTransaction(
       return null;
     }
 
-    console.log("[DOKU] Payment created:", responseData);
+    console.log("[DOKU] Full API response:", JSON.stringify(responseData, null, 2));
 
     // Extract payment URL from response
     const paymentUrl =
@@ -194,10 +194,33 @@ async function createDokuTransaction(
       responseData?.data?.url ||
       responseData?.url;
 
+    // Also log the payment ID for debugging
+    const paymentId =
+      responseData?.response?.payment?.id ||
+      responseData?.payment?.id ||
+      responseData?.data?.payment?.id ||
+      responseData?.data?.id ||
+      responseData?.id;
+
     if (!paymentUrl) {
-      console.error("[DOKU] No payment URL in response:", responseData);
+      console.error("[DOKU] No payment URL in response:", {
+        fullResponse: responseData,
+        responsePaths: {
+          "response.payment.url": responseData?.response?.payment?.url,
+          "payment.url": responseData?.payment?.url,
+          "data.payment.url": responseData?.data?.payment?.url,
+          "data.url": responseData?.data?.url,
+          "url": responseData?.url,
+        },
+      });
       return null;
     }
+
+    console.log("[DOKU] Payment successfully created:", {
+      paymentUrl,
+      paymentId,
+      paymentUrlLength: paymentUrl.length,
+    });
 
     return paymentUrl;
   } catch (error) {
@@ -307,7 +330,7 @@ export async function POST(req: Request) {
     console.log("[API] All files uploaded. Total:", imageUrls.length);
 
     // Calculate amount: sum of price per photo size
-    const unitPrice = 10000;
+    const unitPrice = 1000;
     const amount = photoSizes.reduce((sum) => sum + unitPrice, 0);
 
     // Generate order ID
@@ -356,9 +379,13 @@ export async function POST(req: Request) {
     );
 
     if (!payment_url) {
-      console.error("[API] Failed to create Doku payment");
+      console.error("[API] Failed to create Doku payment - URL is null");
     } else {
-      console.log("[API] Doku payment created:", payment_url);
+      console.log("[API] Doku payment created successfully:", {
+        urlLength: payment_url.length,
+        urlPreview: payment_url.substring(0, 100),
+        urlSuffix: payment_url.substring(payment_url.length - 50),
+      });
     }
 
     // Send confirmation email
@@ -381,6 +408,13 @@ export async function POST(req: Request) {
     } catch (emailError) {
       console.error("Email error:", emailError);
     }
+
+    console.log("[API] Final response being sent:", {
+      order_id: orderData.id,
+      doku_order_id,
+      has_payment_url: !!payment_url,
+      payment_url_length: payment_url?.length,
+    });
 
     return NextResponse.json({
       order_id: orderData.id,
