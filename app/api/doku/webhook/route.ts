@@ -119,7 +119,39 @@ export async function POST(req: Request) {
     console.warn("[DOKU Webhook] DOKU_SERVER_KEY not set - skipping signature verification");
   }
   */
-  console.log("[DOKU Webhook] Signature verification temporarily disabled for debugging");
+  // ========== VERIFY SIGNATURE ==========
+  // Only verify if SERVER_KEY is configured
+  if (DOKU_SERVER_KEY && receivedSignature) {
+    const isValid = verifyDokuSignature(
+      clientId,
+      requestId,
+      requestTimestamp,
+      requestTarget,
+      rawBody,
+      DOKU_SERVER_KEY,
+      receivedSignature
+    );
+
+    if (!isValid) {
+      console.warn("[DOKU Webhook] ❌ SIGNATURE VERIFICATION FAILED", {
+        invoiceNumber: JSON.parse(rawBody)?.order?.invoice_number,
+        expectedSig: `HMACSHA256=...`,
+        receivedSig: receivedSignature.substring(0, 30) + "...",
+      });
+      // Return 401 to tell DOKU we rejected it
+      return NextResponse.json({ error: "invalid_signature" }, { status: 401 });
+    }
+
+    console.log("[DOKU Webhook] ✅ Signature verified successfully");
+  } else if (!DOKU_SERVER_KEY) {
+    // Log warning but allow through (useful for testing/development)
+    console.warn(
+      "[DOKU Webhook] ⚠️ DOKU_SERVER_KEY not configured - SKIPPING signature verification"
+    );
+    console.warn(
+      "[DOKU Webhook] 🔐 For production: Set DOKU_SERVER_KEY in .env.local"
+    );
+  }
 
   // Parse the raw body
   let payload: any;
@@ -163,7 +195,7 @@ export async function POST(req: Request) {
     // Find order by doku_order_id (= invoice_number we sent to DOKU)
     const { data: existing, error: selErr } = await supabaseAdmin
       .from("print_orders")
-      .select("id, paid_at, status")
+      .select("id, paid_at, status, doku_order_id")
       .eq("doku_order_id", invoiceNumber)
       .maybeSingle();
 
@@ -173,9 +205,30 @@ export async function POST(req: Request) {
     }
 
     if (!existing) {
-      console.warn("[DOKU Webhook] Order not found for invoice_number:", invoiceNumber);
+      console.warn("[DOKU Webhook] ⚠️ Order not found for invoice_number:", invoiceNumber);
+      console.warn(
+        "[DOKU Webhook] This might mean: (1) Order not created yet, (2) Wrong Supabase project, (3) Invoice number mismatch"
+      );
       // Return 200 to prevent DOKU retry for unknown orders
       return NextResponse.json({ ok: true, msg: "order_not_found" });
+    }
+
+    // Check if already processed (prevent duplicate status updates)
+    const isAlreadyPaid = existing.status === "PAID" && existing.paid_at;
+    if (isAlreadyPaid && transactionStatus === "SUCCESS") {
+      console.log(
+        `[DOKU Webhook] ℹ️  Order already marked as PAID at ${existing.paid_at}, skipping duplicate update`
+      );
+      return NextResponse.json({
+        ok: true,
+        msg: "already_processed",
+        debug: {
+          orderId: existing.id,
+          invoiceNumber,
+          currentStatus: existing.status,
+          paidAt: existing.paid_at,
+        },
+      });
     }
 
     // Only set paid_at once (avoid overwriting if already processed)
@@ -197,22 +250,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: updateErr.message }, { status: 500 });
     }
 
-    console.log("[DOKU Webhook] Order updated:", {
-      id: existing.id,
-      status: order_status,
-      paid_at: shouldSetPaidAt ? updatePayload.paid_at : "unchanged",
+    console.log("[DOKU Webhook] ✅ Order updated successfully:", {
+      orderId: existing.id,
+      dokuOrderId: invoiceNumber,
+      previousStatus: existing.status,
+      newStatus: order_status,
+      paidAt: shouldSetPaidAt ? updatePayload.paid_at : "unchanged",
     });
 
     // Trigger auto-print if payment just confirmed as successful
     if (isPaid && shouldSetPaidAt) {
-      console.log(`[DOKU Webhook] Payment confirmed for order ${existing.id} - triggering auto-print`);
+      console.log(`[DOKU Webhook] 🖨️  Payment confirmed for order ${existing.id} - triggering auto-print`);
       autoPrintOrder(existing.id).catch((err) => {
         console.error(`[DOKU Webhook] Auto-print failed for ${existing.id}:`, err);
       });
     }
 
-    // Always respond 200 OK to DOKU
-    return NextResponse.json({ ok: true });
+    // Always respond 200 OK to DOKU (prevents retry)
+    return NextResponse.json({
+      ok: true,
+      debug: {
+        orderId: existing.id,
+        invoiceNumber,
+        status: order_status,
+        paidAt: shouldSetPaidAt ? updatePayload.paid_at : null,
+      },
+    });
   } catch (error) {
     console.error("[DOKU Webhook] Unexpected error:", error);
     return NextResponse.json(

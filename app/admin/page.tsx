@@ -145,128 +145,261 @@ export default function AdminPage() {
         return;
       }
 
-      // Print all images in a single window
-      console.log(`Printing ${imageUrls.length} images | Size: ${order.size} | Qty: ${order.qty}`);
+      console.log(`[PRINT] Starting print for order ${id}:`, {
+        imageCount: imageUrls.length,
+        size: order.size,
+        qty: order.qty,
+        urls: imageUrls,
+      });
 
-      // Preload images before printing
+      // ============= PRELOAD & CONVERT IMAGES =============
+      // Load all images and convert to data URLs
       const loadedImages: string[] = [];
       for (const url of imageUrls) {
         try {
+          console.log(`[PRINT] Loading image: ${url}`);
           const response = await fetch(url);
+          if (!response.ok) {
+            console.warn(`[PRINT] Failed to load image: ${response.status}`);
+            continue;
+          }
           const blob = await response.blob();
-          const dataUrl = await new Promise<string>((resolve) => {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
             reader.readAsDataURL(blob);
           });
+          console.log(`[PRINT] Image loaded: ${dataUrl.substring(0, 50)}...`);
           loadedImages.push(dataUrl);
         } catch (err) {
-          console.error('Failed to load image:', url, err);
+          console.error('[PRINT] Failed to load image:', url, err);
         }
       }
 
       if (loadedImages.length === 0) {
-        alert("Gagal memuat gambar untuk print");
+        alert("❌ Gagal memuat gambar untuk print");
         return;
       }
 
-      // Create HTML with all images as data URLs
-      // For first image: no page break
-      // For subsequent images: page-break-before to start on new page
-      const imagesHtml = loadedImages.map((dataUrl, index) => {
-        const pageBreak = index > 0 ? "page-break-before:always;" : "";
-        return `<img src="${dataUrl}" style="${pageBreak}width:100%;height:100%;display:block;margin:0;padding:0;object-fit:cover;" />`;
-      }).join('');
+      console.log(`[PRINT] Successfully loaded ${loadedImages.length} image(s)`);
 
-      // Determine page size based on order size
+      // ============= CALCULATE PAGE DIMENSIONS =============
+      // 2x6 = 2 inches wide x 6 inches tall
       // 4x6 = 4 inches wide x 6 inches tall
-      // 2x6 = 2 inches wide x 6 inches tall (strip/portrait)
-      const pageSize = order.size === "strip" || order.size === "2x6" 
-        ? "2in 6in" // 2x6 strip
-        : "4in 6in"; // 4x6 standard
+      // At 96 DPI (screen): 2x6 = 192x576px, 4x6 = 384x576px
+      const pageWidth = order.size === "2x6" ? 2 : 4; // inches
+      const pageHeight = 6; // inches
+      const dpi = 96; // screen DPI for display
+      const widthPx = pageWidth * dpi;
+      const heightPx = pageHeight * dpi;
 
-      // Open print window
+      console.log(`[PRINT] Page dimensions for ${order.size}:`, {
+        inches: `${pageWidth}x${pageHeight}`,
+        pixels: `${widthPx}x${heightPx}`,
+      });
+
+      // ============= CREATE PRINT WINDOW =============
       const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(`
-          <html>
-          <head>
-            <title>Print - ${order.size === "strip" || order.size === "2x6" ? "2×6" : "4×6"}</title>
-            <style>
-              * { 
-                margin: 0; 
-                padding: 0; 
-                box-sizing: border-box;
+      if (!printWindow) {
+        alert("❌ Popup blocked. Please allow popups for this site.");
+        return;
+      }
+
+      // Generate HTML with all images, each on separate page
+      const imagesHtml = loadedImages
+        .map((dataUrl, idx) => {
+          return `
+            <div class="print-page" id="page-${idx}">
+              <img 
+                src="${dataUrl}" 
+                class="print-image"
+                alt="Image ${idx + 1}"
+                onload="window.imageLoadCount = (window.imageLoadCount || 0) + 1; checkAllImagesLoaded();"
+                onerror="console.error('Image ${idx} failed to load')"
+              />
+            </div>
+          `;
+        })
+        .join('');
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>Print - ${order.size === "2x6" ? "2×6" : "4×6"}</title>
+          <style>
+            /* Reset all margins and padding */
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+
+            html, body {
+              width: 100%;
+              height: 100%;
+              margin: 0;
+              padding: 0;
+            }
+
+            /* Print page container - one per image */
+            .print-page {
+              width: ${widthPx}px;
+              height: ${heightPx}px;
+              page-break-after: always;
+              page-break-inside: avoid;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              background: white;
+              overflow: hidden;
+              position: relative;
+            }
+
+            /* Image fills entire page, no white borders */
+            .print-image {
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
+              object-position: center;
+              display: block;
+            }
+
+            /* Print-specific styles */
+            @page {
+              /* Paper size: match the print size */
+              size: ${pageWidth}in ${pageHeight}in;
+              margin: 0;
+              padding: 0;
+            }
+
+            @media print {
+              * {
+                margin: 0 !important;
+                padding: 0 !important;
               }
-              
-              body { 
-                margin: 0; 
-                padding: 0; 
-                background: white;
-                width: ${pageSize.split(' ')[0]};
-                height: ${pageSize.split(' ')[1]};
-              }
-              
-              @page {
-                size: ${pageSize};
-                margin: 0;
-                padding: 0;
-              }
-              
-              @media print {
-                * {
-                  margin: 0 !important;
-                  padding: 0 !important;
-                }
-                
-                body {
-                  margin: 0 !important;
-                  padding: 0 !important;
-                  width: 100%;
-                  height: 100%;
-                }
-                
-                img {
-                  margin: 0 !important;
-                  padding: 0 !important;
-                  width: 100%;
-                  height: 100%;
-                  display: block;
-                  object-fit: cover;
-                }
-              }
-              
-              img { 
-                display: block; 
+
+              html, body {
+                margin: 0 !important;
+                padding: 0 !important;
                 width: 100%;
                 height: 100%;
-                margin: 0;
-                padding: 0;
-                object-fit: cover;
               }
-            </style>
-          </head>
-          <body>
-            ${imagesHtml}
-            <script>
-              window.onload = function() {
-                setTimeout(function() { window.print(); }, 500);
-              };
-              window.onafterprint = function() { window.close(); }
-            </script>
-          </body>
-          </html>
-        `);
-        printWindow.document.close();
-      } else {
-        alert("Popup blocked. Please allow popups for this site.");
-        return;
-      }
 
-      // Wait for print dialog
-      await new Promise(resolve => setTimeout(resolve, 3000));
+              .print-page {
+                width: 100%;
+                height: 100%;
+                margin: 0 !important;
+                padding: 0 !important;
+                page-break-after: always;
+                page-break-before: avoid;
+                page-break-inside: avoid;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: white;
+              }
 
-      // Mark as printed after printing
+              .print-image {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+              }
+            }
+
+            /* Loading indicator */
+            #loading {
+              position: fixed;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%);
+              background: white;
+              padding: 20px;
+              border-radius: 8px;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+              z-index: 10000;
+              font-family: Arial, sans-serif;
+              text-align: center;
+            }
+
+            #loading p {
+              margin: 0;
+              color: #333;
+              font-size: 14px;
+            }
+
+            #loading .spinner {
+              width: 30px;
+              height: 30px;
+              border: 3px solid #e0e0e0;
+              border-top-color: #0066cc;
+              border-radius: 50%;
+              animation: spin 1s linear infinite;
+              margin: 10px auto;
+            }
+
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+          </style>
+        </head>
+        <body>
+          ${imagesHtml}
+
+          <div id="loading">
+            <div class="spinner"></div>
+            <p id="status">Loading images...</p>
+          </div>
+
+          <script>
+            window.imageLoadCount = 0;
+            window.totalImages = ${loadedImages.length};
+            window.pageSize = "${order.size}";
+
+            function checkAllImagesLoaded() {
+              const status = document.getElementById('status');
+              status.textContent = \`Loading images: \${window.imageLoadCount}/\${window.totalImages}\`;
+
+              if (window.imageLoadCount >= window.totalImages) {
+                console.log('[PRINT] ✅ All images loaded, ready to print');
+                document.getElementById('loading').remove();
+                setTimeout(function() {
+                  window.print();
+                  // Close window after print dialog closes
+                  setTimeout(function() {
+                    window.close();
+                  }, 500);
+                }, 300);
+              }
+            }
+
+            // Timeout safety: auto-print after 10 seconds even if images aren't loaded
+            setTimeout(function() {
+              if (window.imageLoadCount < window.totalImages) {
+                console.warn(\`[PRINT] ⚠️ Timeout: Only \${window.imageLoadCount}/\${window.totalImages} images loaded\`);
+                document.getElementById('loading').remove();
+                window.print();
+              }
+            }, 10000);
+          </script>
+        </body>
+        </html>
+      `;
+
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+
+      console.log(`[PRINT] Print window opened, waiting for images to load...`);
+
+      // Wait a bit for print dialog (adjustable)
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      // ============= MARK AS PRINTED =============
+      console.log(`[PRINT] Marking order as printed...`);
       const markRes = await fetch("/api/admin/mark-printed", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeader },
@@ -275,9 +408,12 @@ export default function AdminPage() {
 
       const markJson = await markRes.json().catch(() => ({}));
       if (!markRes.ok) {
-        alert(`Mark printed error: ${markJson?.error ?? `HTTP ${markRes.status}`}`);
+        console.error(`[PRINT] Failed to mark printed:`, markJson);
+        alert(`❌ Mark printed error: ${markJson?.error ?? `HTTP ${markRes.status}`}`);
         return;
       }
+
+      console.log(`[PRINT] ✅ Order marked as printed:`, markJson);
 
       // Close confirmation modal
       setPrintConfirm(null);
@@ -285,7 +421,8 @@ export default function AdminPage() {
       // Reload to show updated status
       await load();
     } catch (error) {
-      alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`[PRINT] ❌ Error:`, error);
+      alert(`❌ Error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setPrintingIds(prev => {
         const next = new Set(prev);
