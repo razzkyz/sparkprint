@@ -49,6 +49,9 @@ export default function AdminPage() {
   const [previewImages, setPreviewImages] = useState<string[]>([]);
   const [printingIds, setPrintingIds] = useState<Set<string>>(new Set());
 
+  // Print confirmation modal
+  const [printConfirm, setPrintConfirm] = useState<Order | null>(null);
+
   // Tab - temporarily disable cashier
   const [activeTab, setActiveTab] = useState<"qris" | "cashier">("qris");
 
@@ -109,15 +112,25 @@ export default function AdminPage() {
   }
 
   async function markPrinted(id: string) {
+    // Find order data
+    const order = currentOrders.find(o => o.id === id);
+    if (!order) {
+      alert("Order tidak ditemukan");
+      return;
+    }
+
+    // Show confirmation modal with print details
+    setPrintConfirm(order);
+  }
+
+  async function confirmedMarkPrinted() {
+    if (!printConfirm) return;
+
+    const id = printConfirm.id;
     setPrintingIds(prev => new Set(prev).add(id));
 
     try {
-      // Find order data
-      const order = currentOrders.find(o => o.id === id);
-      if (!order) {
-        alert("Order tidak ditemukan");
-        return;
-      }
+      const order = printConfirm;
 
       // Handle image_urls - ensure it's an array
       let imageUrls: string[] = [];
@@ -133,7 +146,7 @@ export default function AdminPage() {
       }
 
       // Print all images in a single window
-      console.log(`Printing ${imageUrls.length} images`);
+      console.log(`Printing ${imageUrls.length} images | Size: ${order.size} | Qty: ${order.qty}`);
 
       // Preload images before printing
       const loadedImages: string[] = [];
@@ -158,21 +171,86 @@ export default function AdminPage() {
       }
 
       // Create HTML with all images as data URLs
-      const imagesHtml = loadedImages.map((dataUrl) =>
-        `<img src="${dataUrl}" style="max-width:100%;max-height:100vh;margin:20px auto;display:block;page-break-after:always;" />`
-      ).join('');
+      // For first image: no page break
+      // For subsequent images: page-break-before to start on new page
+      const imagesHtml = loadedImages.map((dataUrl, index) => {
+        const pageBreak = index > 0 ? "page-break-before:always;" : "";
+        return `<img src="${dataUrl}" style="${pageBreak}width:100%;height:100%;display:block;margin:0;padding:0;object-fit:cover;" />`;
+      }).join('');
+
+      // Determine page size based on order size
+      // 4x6 = 4 inches wide x 6 inches tall
+      // 2x6 = 2 inches wide x 6 inches tall (strip/portrait)
+      const pageSize = order.size === "strip" || order.size === "2x6" 
+        ? "2in 6in" // 2x6 strip
+        : "4in 6in"; // 4x6 standard
 
       // Open print window
       const printWindow = window.open('', '_blank');
       if (printWindow) {
         printWindow.document.write(`
           <html>
-          <head><title>Print</title></head>
-          <body style="margin:0;padding:0;">
+          <head>
+            <title>Print - ${order.size === "strip" || order.size === "2x6" ? "2×6" : "4×6"}</title>
+            <style>
+              * { 
+                margin: 0; 
+                padding: 0; 
+                box-sizing: border-box;
+              }
+              
+              body { 
+                margin: 0; 
+                padding: 0; 
+                background: white;
+                width: ${pageSize.split(' ')[0]};
+                height: ${pageSize.split(' ')[1]};
+              }
+              
+              @page {
+                size: ${pageSize};
+                margin: 0;
+                padding: 0;
+              }
+              
+              @media print {
+                * {
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+                
+                body {
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  width: 100%;
+                  height: 100%;
+                }
+                
+                img {
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  width: 100%;
+                  height: 100%;
+                  display: block;
+                  object-fit: cover;
+                }
+              }
+              
+              img { 
+                display: block; 
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+                object-fit: cover;
+              }
+            </style>
+          </head>
+          <body>
             ${imagesHtml}
             <script>
               window.onload = function() {
-                setTimeout(function() { window.print(); }, 1000);
+                setTimeout(function() { window.print(); }, 500);
               };
               window.onafterprint = function() { window.close(); }
             </script>
@@ -200,6 +278,9 @@ export default function AdminPage() {
         alert(`Mark printed error: ${markJson?.error ?? `HTTP ${markRes.status}`}`);
         return;
       }
+
+      // Close confirmation modal
+      setPrintConfirm(null);
 
       // Reload to show updated status
       await load();
@@ -705,6 +786,98 @@ export default function AdminPage() {
               >
                 ✕
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Print Confirmation Modal */}
+        {printConfirm && (
+          <div 
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4"
+            onClick={() => setPrintConfirm(null)}
+          >
+            <div 
+              className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-gray-900">🖨️ Konfirmasi Print</h2>
+                <p className="text-sm text-gray-500 mt-1">Pastikan detail pesanan sebelum print</p>
+              </div>
+
+              {/* Order Details */}
+              <div className="space-y-4 mb-6 bg-gray-50 rounded-lg p-4">
+                {/* Ticket Number */}
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">No. Tiket:</span>
+                  <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-700 font-bold text-sm">
+                    {printConfirm.queue_number ?? "-"}
+                  </span>
+                </div>
+
+                {/* Customer Name */}
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">Customer:</span>
+                  <span className="font-semibold text-gray-900">{printConfirm.customer_name || "-"}</span>
+                </div>
+
+                {/* Print Size - HIGHLIGHTED */}
+                <div className="border-2 border-emerald-500 rounded-lg p-3 bg-emerald-50">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-emerald-900">Ukuran Print:</span>
+                    <span className="inline-flex items-center rounded-md bg-emerald-600 text-white px-3 py-1 text-lg font-bold">
+                      {printConfirm.size === "strip" || printConfirm.size === "2x6" ? "2×6" : "4×6"}
+                    </span>
+                  </div>
+                  <div className="text-xs text-emerald-700 mt-1">
+                    {printConfirm.size === "strip" || printConfirm.size === "2x6" 
+                      ? "📸 Foto strip / Photo strip" 
+                      : "📷 Standar / Standard"}
+                  </div>
+                </div>
+
+                {/* Quantity */}
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">Jumlah:</span>
+                  <span className="font-semibold text-gray-900">{printConfirm.qty} pcs</span>
+                </div>
+
+                {/* Total Photos */}
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">Jumlah Foto:</span>
+                  <span className="font-semibold text-gray-900">
+                    {Array.isArray(printConfirm.image_urls) ? printConfirm.image_urls.length : 1} file
+                  </span>
+                </div>
+
+                {/* Amount */}
+                <div className="border-t border-emerald-200 pt-3 flex items-center justify-between">
+                  <span className="text-gray-600">Total:</span>
+                  <span className="font-bold text-emerald-700 text-lg">Rp{formatIDR(printConfirm.amount)}</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setPrintConfirm(null)}
+                  className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={confirmedMarkPrinted}
+                  className="flex-1 rounded-lg bg-emerald-600 px-4 py-2.5 font-semibold text-white hover:bg-emerald-700 shadow-md transition-colors"
+                >
+                  ✓ Print Sekarang
+                </button>
+              </div>
+
+              {/* Info */}
+              <p className="text-xs text-gray-500 text-center mt-4">
+                Pastikan printer sudah siap sebelum print
+              </p>
             </div>
           </div>
         )}
