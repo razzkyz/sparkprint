@@ -338,41 +338,24 @@ async function handleWebhook(req: Request): Promise<Response> {
       });
     }
 
-    console.log("[DOKU] Order updated successfully:", {
+    console.log("[DOKU] ✅ Order updated successfully:", {
       orderId: existing.id,
+      invoiceNumber,
       newStatus: orderStatus,
       paidAtSet: shouldSetPaidAt,
+      timestamp: new Date().toISOString(),
     });
 
-    // ========== STEP 11: CALL AUTO-PRINT FUNCTION ==========
-    if (isPaid && shouldSetPaidAt) {
-      console.log("[DOKU] Triggering auto-print for order:", existing.id);
-
-      // Call auto-print edge function (if available)
-      try {
-        const printResponse = await fetch(
-          `${SUPABASE_URL}/functions/v1/auto-print-order`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-            },
-            body: JSON.stringify({ orderId: existing.id }),
-          }
-        );
-
-        if (!printResponse.ok) {
-          console.warn("[DOKU] Auto-print function returned error:", printResponse.status);
-        }
-      } catch (printError) {
-        console.warn("[DOKU] Failed to call auto-print function:", printError);
-        // Don't fail the webhook if auto-print fails
-      }
-    }
-
-    // ========== STEP 12: RETURN SUCCESS ==========
-    return new Response(JSON.stringify({ ok: true, orderId: existing.id }), {
+    // ========== STEP 11: RETURN SUCCESS ==========
+    // Note: Auto-print is triggered via admin panel or manual API call
+    // because Vercel Edge Functions cannot access local TCP printers
+    return new Response(JSON.stringify({ 
+      ok: true, 
+      orderId: existing.id,
+      invoiceNumber,
+      status: orderStatus,
+      message: "Payment processed. Status updated to PAID. Use admin panel to trigger printing."
+    }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
