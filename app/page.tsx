@@ -150,14 +150,23 @@ export default function KioskPage() {
   // Upload image langsung ke Supabase Storage
   async function uploadToSupabase(compressedBlob: Blob, originalName: string): Promise<string> {
     try {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+      if (!supabaseUrl || !supabaseKey) {
+        throw new Error(`Missing Supabase config: URL=${!!supabaseUrl}, KEY=${!!supabaseKey}`);
+      }
+
+      console.log("[Upload] Supabase URL:", supabaseUrl);
+      console.log("[Upload] Starting upload:", originalName, "Size:", compressedBlob.size);
+
+      const supabase = createClient(supabaseUrl, supabaseKey);
 
       const timestamp = Date.now();
       const randomId = Math.random().toString(36).substring(2, 8);
       const fileName = `${timestamp}-${randomId}-${originalName}`;
+
+      console.log("[Upload] File name:", fileName);
 
       const { data, error } = await supabase.storage
         .from("photos")
@@ -170,14 +179,19 @@ export default function KioskPage() {
         throw new Error(`Upload failed: ${error.message}`);
       }
 
+      console.log("[Upload] File uploaded:", data.path);
+
       // Get public URL
       const { data: urlData } = supabase.storage
         .from("photos")
         .getPublicUrl(data.path);
 
+      console.log("[Upload] Public URL:", urlData.publicUrl);
       return urlData.publicUrl;
     } catch (err) {
-      throw new Error(err instanceof Error ? err.message : "Upload error");
+      const errorMsg = err instanceof Error ? err.message : "Upload error";
+      console.error("[Upload] Error:", errorMsg);
+      throw new Error(errorMsg);
     }
   }
 
@@ -210,17 +224,8 @@ export default function KioskPage() {
       // Compress semua files
       const compressedBlobs = await Promise.all(files.map(f => compressImage(f)));
 
-      // Create previews
-      const newPreviews = await Promise.all(
-        compressedBlobs.map(blob => {
-          return new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target?.result as string);
-            reader.readAsArrayBuffer(blob);
-            reader.readAsDataURL(blob);
-          });
-        })
-      );
+      // Create previews using object URLs (lightweight, no base64 encoding)
+      const newPreviews = compressedBlobs.map(blob => URL.createObjectURL(blob));
 
       // Upload ke Supabase (parallel, langsung bypass Vercel API limit)
       const uploadUrls = await Promise.all(
