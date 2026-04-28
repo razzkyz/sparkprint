@@ -210,29 +210,19 @@ export async function POST(req: Request) {
   try {
     console.log("[API] Received print order request");
 
-    // Parse FormData
-    const formData = await req.formData();
-    console.log("[API] FormData keys:", Array.from(formData.keys()));
+    // Parse JSON (image URLs already uploaded to Supabase by client)
+    const body = await req.json();
+    console.log("[API] Request body keys:", Object.keys(body));
 
-    const photoFiles: File[] = [];
-    formData.forEach((value, key) => {
-      if (key === "photos" && value instanceof File) {
-        photoFiles.push(value);
-      }
-    });
-
-    console.log("[API] Photo files received:", photoFiles.length);
-
-    if (photoFiles.length === 0) {
-      return NextResponse.json({ error: "Photo files are required" }, { status: 400 });
-    }
-
-    const qty = Number(formData.get("qty") ?? 1);
-    const size = String(formData.get("size") ?? "4x6") as SizeKey;
-    const queue_number = Number(formData.get("queue_number") ?? 0);
-    const customer_name = String(formData.get("customer_name") ?? "").trim().slice(0, 40);
-    const customer_email = String(formData.get("customer_email") ?? "").trim().toLowerCase().slice(0, 120);
+    const imageUrls: string[] = body.imageUrls || [];
+    const qty = Number(body.qty ?? 1);
+    const size = String(body.size ?? "4x6") as SizeKey;
+    const queue_number = Number(body.queue_number ?? 0);
+    const customer_name = String(body.customer_name ?? "").trim().slice(0, 40);
+    const customer_email = String(body.customer_email ?? "").trim().toLowerCase().slice(0, 120);
     const payment_method = "qris"; // Always use QRIS/E-Wallet via Doku
+
+    console.log("[API] Image URLs received:", imageUrls.length);
 
     // Validate inputs
     if (!customer_name) {
@@ -240,6 +230,9 @@ export async function POST(req: Request) {
     }
     if (!customer_email || !isValidEmail(customer_email)) {
       return NextResponse.json({ error: "Valid email is required" }, { status: 400 });
+    }
+    if (imageUrls.length === 0) {
+      return NextResponse.json({ error: "At least 1 image URL is required" }, { status: 400 });
     }
     if (qty < 1 || qty > 100) {
       return NextResponse.json({ error: "Quantity must be between 1-100" }, { status: 400 });
@@ -250,50 +243,6 @@ export async function POST(req: Request) {
     if (queue_number < 1 || queue_number > 999) {
       return NextResponse.json({ error: "Queue number must be between 1-999" }, { status: 400 });
     }
-
-    // Upload photos to Supabase Storage
-    const imageUrls: string[] = [];
-    const filePaths: string[] = [];
-
-    console.log("[API] Starting upload of", photoFiles.length, "photos...");
-
-    for (const photoFile of photoFiles) {
-      const fileExt = photoFile.name.split(".").pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `${fileName}`;
-
-      console.log("[API] Uploading file:", fileName);
-
-      const { error: uploadError } = await supabaseAdmin.storage
-        .from("photos")
-        .upload(filePath, photoFile, {
-          contentType: photoFile.type,
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        // Cleanup uploaded files if any
-        if (filePaths.length > 0) {
-          await supabaseAdmin.storage.from("photos").remove(filePaths);
-        }
-        return NextResponse.json(
-          { error: `Failed to upload photo: ${uploadError.message}` },
-          { status: 500 }
-        );
-      }
-
-      // Get public URL
-      const {
-        data: { publicUrl },
-      } = supabaseAdmin.storage.from("photos").getPublicUrl(filePath);
-
-      imageUrls.push(publicUrl);
-      filePaths.push(filePath);
-      console.log("[API] File uploaded successfully:", publicUrl);
-    }
-
-    console.log("[API] All files uploaded. Total:", imageUrls.length);
 
     // Calculate amount
     const unitPrice = 10000; // Same price for both sizes
@@ -313,7 +262,7 @@ export async function POST(req: Request) {
         customer_name,
         customer_email,
         fotoshare_token: "",
-        image_urls: imageUrls, // Use array of image URLs
+        image_urls: imageUrls, // Array of public URLs from Supabase
         size,
         qty,
         amount,
@@ -328,7 +277,6 @@ export async function POST(req: Request) {
 
     if (orderError) {
       console.error("Order creation error:", orderError);
-      await supabaseAdmin.storage.from("photos").remove(filePaths);
       return NextResponse.json({ error: "Failed to create order" }, { status: 500 });
     }
 

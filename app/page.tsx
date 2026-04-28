@@ -2,6 +2,7 @@
 
 import Script from "next/script";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 
 declare global {
   interface Window {
@@ -37,8 +38,8 @@ export default function KioskPage() {
   const [email, setEmail] = useState("");
   const [queueNumber, setQueueNumber] = useState("");
 
-  // Photo upload
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  // Photo upload (store URLs directly from Supabase, not Files)
+  const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [qty, setQty] = useState(1);
   const [size, setSize] = useState<SizeKey>("4x6");
@@ -65,10 +66,10 @@ export default function KioskPage() {
 
   // Auto-set quantity based on number of uploaded images
   useEffect(() => {
-    if (uploadedFiles.length > 0) {
-      setQty(uploadedFiles.length);
+    if (uploadedUrls.length > 0) {
+      setQty(uploadedUrls.length);
     }
-  }, [uploadedFiles.length]);
+  }, [uploadedUrls.length]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -98,6 +99,88 @@ export default function KioskPage() {
     setTimeout(() => fileInputRef.current?.focus(), 50);
   }
 
+  // Compress image to reduce file size
+  async function compressImage(file: File): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let { width, height } = img;
+
+          const maxWidth = 1200;
+          const maxHeight = 1800;
+
+          if (width > height) {
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx?.drawImage(img, 0, 0, width, height);
+
+          // WebP format lebih kecil dari JPEG
+          canvas.toBlob(
+            (blob) => {
+              if (blob) resolve(blob);
+              else reject(new Error("Canvas compression failed"));
+            },
+            "image/webp",
+            0.7
+          );
+        };
+        img.onerror = () => reject(new Error("Image load failed"));
+      };
+      reader.onerror = () => reject(new Error("FileReader error"));
+    });
+  }
+
+  // Upload image langsung ke Supabase Storage
+  async function uploadToSupabase(compressedBlob: Blob, originalName: string): Promise<string> {
+    try {
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+
+      const timestamp = Date.now();
+      const randomId = Math.random().toString(36).substring(2, 8);
+      const fileName = `${timestamp}-${randomId}-${originalName}`;
+
+      const { data, error } = await supabase.storage
+        .from("photos")
+        .upload(fileName, compressedBlob, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (error) {
+        throw new Error(`Upload failed: ${error.message}`);
+      }
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from("photos")
+        .getPublicUrl(data.path);
+
+      return urlData.publicUrl;
+    } catch (err) {
+      throw new Error(err instanceof Error ? err.message : "Upload error");
+    }
+  }
+
   // Handle photo upload
   async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
@@ -112,34 +195,57 @@ export default function KioskPage() {
       return;
     }
 
-    // Validate file sizes (max 10MB each)
-    const maxSize = 10 * 1024 * 1024;
+    // Validate file sizes (max 50MB each - generous)
+    const maxSize = 50 * 1024 * 1024;
     const oversizedFiles = files.filter(f => f.size > maxSize);
     if (oversizedFiles.length > 0) {
-      setStatus({ kind: "err", text: "Ukuran file terlalu besar. Maksimal 10MB per file." });
+      setStatus({ kind: "err", text: "Ukuran file terlalu besar. Maksimal 50MB per file." });
       e.target.value = "";
       return;
     }
 
-    // Create previews
-    const newPreviews = await Promise.all(
-      files.map(file => {
-        return new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.readAsDataURL(file);
-        });
-      })
-    );
+    setStatus({ kind: "info", text: `Mengkompresi dan mengupload ${files.length} foto...` });
 
-    setUploadedFiles(prev => [...prev, ...files]);
-    setPreviewUrls(prev => [...prev, ...newPreviews]);
-    setStatus({ kind: "ok", text: `${files.length} foto ditambahkan. Total: ${uploadedFiles.length + files.length} foto.` });
-    e.target.value = "";
+    try {
+      // Compress semua files
+      const compressedBlobs = await Promise.all(files.map(f => compressImage(f)));
+
+      // Create previews
+      const newPreviews = await Promise.all(
+        compressedBlobs.map(blob => {
+          return new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.readAsArrayBuffer(blob);
+            reader.readAsDataURL(blob);
+          });
+        })
+      );
+
+      // Upload ke Supabase (parallel, langsung bypass Vercel API limit)
+      const uploadUrls = await Promise.all(
+        files.map((file, idx) => uploadToSupabase(compressedBlobs[idx], file.name))
+      );
+
+      setUploadedUrls(prev => [...prev, ...uploadUrls]);
+      setPreviewUrls(prev => [...prev, ...newPreviews]);
+
+      setStatus({
+        kind: "ok",
+        text: `${files.length} foto berhasil diupload. Total: ${uploadedUrls.length + files.length} foto.`,
+      });
+      e.target.value = "";
+    } catch (err) {
+      setStatus({
+        kind: "err",
+        text: `Error upload: ${err instanceof Error ? err.message : "Unknown error"}`,
+      });
+      e.target.value = "";
+    }
   }
 
   function removePhoto(index: number) {
-    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+    setUploadedUrls(prev => prev.filter((_, i) => i !== index));
     setPreviewUrls(prev => prev.filter((_, i) => i !== index));
   }
 
@@ -159,7 +265,7 @@ export default function KioskPage() {
     email.trim().length > 0 &&
     isValidEmail(email.trim()) &&
     isValidQueueNumber &&
-    uploadedFiles.length > 0 &&
+    uploadedUrls.length > 0 &&
     qty >= 1;
 
   async function pay() {
@@ -175,7 +281,7 @@ export default function KioskPage() {
       setStatus({ kind: "warn", text: "Format email tidak valid." });
       return;
     }
-    if (uploadedFiles.length === 0) {
+    if (uploadedUrls.length === 0) {
       setStatus({ kind: "warn", text: "Foto belum diupload." });
       fileInputRef.current?.focus();
       return;
@@ -191,24 +297,22 @@ export default function KioskPage() {
     }
 
     setLoading(true);
-    setStatus({ kind: "info", text: "Mengupload foto dan membuat pesanan..." });
+    setStatus({ kind: "info", text: "Membuat pesanan..." });
 
     try {
-      // Create FormData for file upload
-      const formData = new FormData();
-      uploadedFiles.forEach((file, index) => {
-        formData.append(`photos`, file);
-      });
-      formData.append("qty", qty.toString());
-      formData.append("size", size);
-      formData.append("queue_number", queueNum.toString());
-      formData.append("customer_name", name.trim());
-      formData.append("customer_email", email.trim());
-      formData.append("payment_method", "qris");
-
+      // Send JSON dengan image URLs (bypass Vercel API limit)
       const r = await fetch("/api/print-orders", {
         method: "POST",
-        body: formData, // Send as FormData instead of JSON
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageUrls: uploadedUrls,
+          qty: qty,
+          size: size,
+          queue_number: queueNum,
+          customer_name: name.trim(),
+          customer_email: email.trim(),
+          payment_method: "qris",
+        }),
       });
 
       const j = await r.json().catch(() => ({}));
@@ -528,7 +632,7 @@ export default function KioskPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            setUploadedFiles([]);
+                            setUploadedUrls([]);
                             setPreviewUrls([]);
                           }}
                           className="text-xs text-red-600 hover:text-red-700"
