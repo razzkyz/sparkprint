@@ -131,8 +131,7 @@ export default function KioskPage() {
               else reject(new Error("Canvas compression failed"));
             },
             "image/webp",
-            0.7
-          );
+            0.6  // More aggressive compression (was 0.7) to reduce file size for multiple photos
         };
         img.onerror = () => reject(new Error("Image load failed"));
       };
@@ -145,9 +144,9 @@ export default function KioskPage() {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    // Limit to 1 photo only
-    if (files.length > 1) {
-      setStatus({ kind: "err", text: "Hanya 1 foto yang boleh diupload. Silakan pilih 1 foto saja." });
+    // Allow up to 3 photos
+    if (files.length > 3) {
+      setStatus({ kind: "err", text: "Maksimal 3 foto yang boleh diupload sekaligus. Silakan pilih maksimal 3 foto." });
       e.target.value = "";
       return;
     }
@@ -161,11 +160,11 @@ export default function KioskPage() {
       return;
     }
 
-    // Validate file sizes (max 50MB each)
-    const maxSize = 50 * 1024 * 1024;
+    // Validate file sizes (max 20MB each to avoid 413 errors)
+    const maxSize = 20 * 1024 * 1024;
     const oversizedFiles = files.filter(f => f.size > maxSize);
     if (oversizedFiles.length > 0) {
-      setStatus({ kind: "err", text: "Ukuran file terlalu besar. Maksimal 50MB per file." });
+      setStatus({ kind: "err", text: "Ukuran file terlalu besar. Maksimal 20MB per file." });
       e.target.value = "";
       return;
     }
