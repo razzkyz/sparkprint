@@ -87,7 +87,7 @@ export default function AdminPage() {
     qrisParams.set("limit", "200");
     qrisParams.set("paymentMethod", "qris");
 
-    const qrisRes = await fetch(`/api/admin/orders?${qrisParams.toString()}`, { headers: authHeader });
+    const qrisRes = await fetch(`/api/admin/orders?${qrisParams.toString()}&_t=${Date.now()}`, { headers: authHeader });
     const qrisJson = await qrisRes.json().catch(() => ({}));
 
     // Load Cashier orders
@@ -100,7 +100,7 @@ export default function AdminPage() {
     cashierParams.set("limit", "200");
     cashierParams.set("paymentMethod", "cashier");
 
-    const cashierRes = await fetch(`/api/admin/orders?${cashierParams.toString()}`, { headers: authHeader });
+    const cashierRes = await fetch(`/api/admin/orders?${cashierParams.toString()}&_t=${Date.now()}`, { headers: authHeader });
     const cashierJson = await cashierRes.json().catch(() => ({}));
 
     if (!qrisRes.ok || !cashierRes.ok) {
@@ -482,13 +482,13 @@ export default function AdminPage() {
     await load();
   }
 
-  // Auto-refresh
+  // Auto-refresh - faster interval for real-time status updates
   useEffect(() => {
     if (!autoRefresh) return;
     if (!password) return;
 
     load();
-    const t = setInterval(load, 5000);
+    const t = setInterval(load, 2000); // 2 seconds for faster updates
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRefresh, password, status, needsPrint, sizeFilter, q, sortDir]);
@@ -744,11 +744,20 @@ export default function AdminPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
-                            {o.size === "strip" ? "2×6" : o.size}
-                          </span>
-                          <span className="text-xs text-gray-600">× {o.qty}</span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* Display per-photo sizes if available */}
+                          {o.photo_sizes && o.photo_sizes.length > 0 ? (
+                            o.photo_sizes.map((size, idx) => (
+                              <span key={idx} className="inline-flex items-center rounded-md bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
+                                {size === "strip" ? "2×6" : size}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
+                              {o.size === "strip" ? "2×6" : o.size}
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-600">({o.qty} {o.qty === 1 ? 'foto' : 'foto'})</span>
                         </div>
                         <div className="text-xs font-semibold text-gray-900">Rp{formatIDR(o.amount)}</div>
                         <div className="text-[10px] text-gray-400">{o.image_urls?.length || 0} foto</div>

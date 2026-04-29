@@ -39,7 +39,7 @@ export async function GET(req: Request) {
   let query = supabaseAdmin
     .from("print_orders")
     .select(
-      "id, queue_number, customer_name, customer_email, image_urls, size, qty, amount, status, created_at, paid_at, doku_order_id, payment_method"
+      "id, queue_number, customer_name, customer_email, image_urls, photo_sizes, size, qty, amount, status, created_at, paid_at, doku_order_id, payment_method"
     )
     .limit(limit);
 

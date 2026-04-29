@@ -145,6 +145,13 @@ export default function KioskPage() {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
+    // Limit to 1 photo only
+    if (files.length > 1) {
+      setStatus({ kind: "err", text: "Hanya 1 foto yang boleh diupload. Silakan pilih 1 foto saja." });
+      e.target.value = "";
+      return;
+    }
+
     // Validate file types
     const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
     const invalidFiles = files.filter(f => !allowedTypes.includes(f.type));
