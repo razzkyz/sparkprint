@@ -132,6 +132,7 @@ export default function KioskPage() {
             },
             "image/webp",
             0.6  // More aggressive compression (was 0.7) to reduce file size for multiple photos
+          );
         };
         img.onerror = () => reject(new Error("Image load failed"));
       };
