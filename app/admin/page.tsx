@@ -155,8 +155,10 @@ export default function AdminPage() {
       });
 
       // ============= PRELOAD & CONVERT IMAGES =============
-      // Load all images and convert to data URLs
+      // Load all images, convert to data URLs, and detect orientation
       const loadedImages: string[] = [];
+      const imageOrientations: ("portrait" | "landscape")[] = [];
+      
       for (const url of imageUrls) {
         try {
           console.log(`[PRINT] Loading image: ${url}`);
@@ -172,8 +174,21 @@ export default function AdminPage() {
             reader.onerror = reject;
             reader.readAsDataURL(blob);
           });
-          console.log(`[PRINT] Image loaded: ${dataUrl.substring(0, 50)}...`);
+          
+          // Detect orientation by loading image and checking dimensions
+          const orientation = await new Promise<"portrait" | "landscape">((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+              const isLandscape = img.width > img.height;
+              resolve(isLandscape ? "landscape" : "portrait");
+            };
+            img.onerror = () => resolve("portrait"); // Default to portrait on error
+            img.src = dataUrl;
+          });
+          
+          console.log(`[PRINT] Image loaded: ${dataUrl.substring(0, 50)}..., orientation: ${orientation}`);
           loadedImages.push(dataUrl);
+          imageOrientations.push(orientation);
         } catch (err) {
           console.error('[PRINT] Failed to load image:', url, err);
         }
@@ -184,7 +199,7 @@ export default function AdminPage() {
         return;
       }
 
-      console.log(`[PRINT] Successfully loaded ${loadedImages.length} image(s)`);
+      console.log(`[PRINT] Successfully loaded ${loadedImages.length} image(s) with orientations:`, imageOrientations);
 
       // ============= CALCULATE PAGE DIMENSIONS =============
       // Get sizes for each photo, fallback to order.size if photo_sizes not available
@@ -201,17 +216,17 @@ export default function AdminPage() {
         return;
       }
 
-      // Generate pages with per-photo sizing and orientation
+      // Generate pages with per-photo sizing and auto-detected orientation
       const imagesHtml = loadedImages
         .map((dataUrl, idx) => {
           const photoSize = photoSizes[idx] || order.size || "4x6";
-          const isLandscape = printOrientation === "landscape";
+          const detectedOrientation = imageOrientations[idx] || "portrait";
           
-          // Calculate dimensions based on orientation
+          // Calculate dimensions based on detected orientation
           let pageWidth = photoSize === "2x6" ? 2 : 4; // inches
           let pageHeight = 6; // inches
           
-          if (isLandscape) {
+          if (detectedOrientation === "landscape") {
             [pageWidth, pageHeight] = [pageHeight, pageWidth]; // Swap for landscape
           }
           
@@ -220,7 +235,7 @@ export default function AdminPage() {
           const heightPx = pageHeight * dpi;
 
           return `
-            <div class="print-page ${isLandscape ? 'landscape' : 'portrait'}" id="page-${idx}" data-size="${photoSize}" data-orientation="${printOrientation}" style="width: ${widthPx}px; height: ${heightPx}px;">
+            <div class="print-page ${detectedOrientation}" id="page-${idx}" data-size="${photoSize}" data-orientation="${detectedOrientation}" style="width: ${widthPx}px; height: ${heightPx}px;">
               <img 
                 src="${dataUrl}" 
                 class="print-image"
@@ -1025,37 +1040,13 @@ export default function AdminPage() {
                       {printConfirm.size === "strip" || printConfirm.size === "2x6" ? "2×6" : "4×6"}
                     </span>
                   </div>
-                  <div className="text-xs text-emerald-700 mb-3">
+                  <div className="text-xs text-emerald-700">
                     {printConfirm.size === "strip" || printConfirm.size === "2x6" 
                       ? "📸 Foto strip / Photo strip" 
                       : "📷 Standar / Standard"}
                   </div>
-                  
-                  {/* Orientation Selector */}
-                  <div className="border-t border-emerald-200 pt-2">
-                    <span className="text-xs font-semibold text-emerald-800 mb-2 block">Orientasi:</span>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setPrintOrientation("portrait")}
-                        className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                          printOrientation === "portrait"
-                            ? "bg-emerald-600 text-white"
-                            : "bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50"
-                        }`}
-                      >
-                        📷 Portrait
-                      </button>
-                      <button
-                        onClick={() => setPrintOrientation("landscape")}
-                        className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                          printOrientation === "landscape"
-                            ? "bg-emerald-600 text-white"
-                            : "bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50"
-                        }`}
-                      >
-                        🖼️ Landscape
-                      </button>
-                    </div>
+                  <div className="text-xs text-emerald-600 mt-2">
+                    🔄 Orientasi otomatis (Portrait/Landscape)
                   </div>
                 </div>
 
