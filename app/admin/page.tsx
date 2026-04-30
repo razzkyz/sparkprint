@@ -52,6 +52,7 @@ export default function AdminPage() {
 
   // Print confirmation modal
   const [printConfirm, setPrintConfirm] = useState<Order | null>(null);
+  const [printOrientation, setPrintOrientation] = useState<"portrait" | "landscape">("portrait");
 
   // Tab - temporarily disable cashier
   const [activeTab, setActiveTab] = useState<"qris" | "cashier">("qris");
@@ -200,18 +201,26 @@ export default function AdminPage() {
         return;
       }
 
-      // Generate pages with per-photo sizing
+      // Generate pages with per-photo sizing and orientation
       const imagesHtml = loadedImages
         .map((dataUrl, idx) => {
           const photoSize = photoSizes[idx] || order.size || "4x6";
-          const pageWidth = photoSize === "2x6" ? 2 : 4; // inches
-          const pageHeight = 6; // inches
+          const isLandscape = printOrientation === "landscape";
+          
+          // Calculate dimensions based on orientation
+          let pageWidth = photoSize === "2x6" ? 2 : 4; // inches
+          let pageHeight = 6; // inches
+          
+          if (isLandscape) {
+            [pageWidth, pageHeight] = [pageHeight, pageWidth]; // Swap for landscape
+          }
+          
           const dpi = 96; // screen DPI for display
           const widthPx = pageWidth * dpi;
           const heightPx = pageHeight * dpi;
 
           return `
-            <div class="print-page" id="page-${idx}" data-size="${photoSize}" style="width: ${widthPx}px; height: ${heightPx}px;">
+            <div class="print-page ${isLandscape ? 'landscape' : 'portrait'}" id="page-${idx}" data-size="${photoSize}" data-orientation="${printOrientation}" style="width: ${widthPx}px; height: ${heightPx}px;">
               <img 
                 src="${dataUrl}" 
                 class="print-image"
@@ -275,16 +284,28 @@ export default function AdminPage() {
               padding: 0;
             }
 
-            /* 4x6 pages */
-            .print-page[data-size="4x6"] {
+            /* 4x6 portrait pages */
+            .print-page[data-size="4x6"][data-orientation="portrait"] {
               width: 384px;
               height: 576px;
             }
 
-            /* 2x6 pages */
-            .print-page[data-size="2x6"] {
+            /* 4x6 landscape pages */
+            .print-page[data-size="4x6"][data-orientation="landscape"] {
+              width: 576px;
+              height: 384px;
+            }
+
+            /* 2x6 portrait pages */
+            .print-page[data-size="2x6"][data-orientation="portrait"] {
               width: 192px;
               height: 576px;
+            }
+
+            /* 2x6 landscape pages */
+            .print-page[data-size="2x6"][data-orientation="landscape"] {
+              width: 576px;
+              height: 192px;
             }
 
             @media print {
@@ -998,16 +1019,43 @@ export default function AdminPage() {
 
                 {/* Print Size - HIGHLIGHTED */}
                 <div className="border-2 border-emerald-500 rounded-lg p-3 bg-emerald-50">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between mb-2">
                     <span className="font-semibold text-emerald-900">Ukuran Print:</span>
                     <span className="inline-flex items-center rounded-md bg-emerald-600 text-white px-3 py-1 text-lg font-bold">
                       {printConfirm.size === "strip" || printConfirm.size === "2x6" ? "2×6" : "4×6"}
                     </span>
                   </div>
-                  <div className="text-xs text-emerald-700 mt-1">
+                  <div className="text-xs text-emerald-700 mb-3">
                     {printConfirm.size === "strip" || printConfirm.size === "2x6" 
                       ? "📸 Foto strip / Photo strip" 
                       : "📷 Standar / Standard"}
+                  </div>
+                  
+                  {/* Orientation Selector */}
+                  <div className="border-t border-emerald-200 pt-2">
+                    <span className="text-xs font-semibold text-emerald-800 mb-2 block">Orientasi:</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setPrintOrientation("portrait")}
+                        className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          printOrientation === "portrait"
+                            ? "bg-emerald-600 text-white"
+                            : "bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50"
+                        }`}
+                      >
+                        📷 Portrait
+                      </button>
+                      <button
+                        onClick={() => setPrintOrientation("landscape")}
+                        className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          printOrientation === "landscape"
+                            ? "bg-emerald-600 text-white"
+                            : "bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50"
+                        }`}
+                      >
+                        🖼️ Landscape
+                      </button>
+                    </div>
                   </div>
                 </div>
 
