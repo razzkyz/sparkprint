@@ -52,7 +52,6 @@ export default function AdminPage() {
 
   // Print confirmation modal
   const [printConfirm, setPrintConfirm] = useState<Order | null>(null);
-  const [printOrientation, setPrintOrientation] = useState<"portrait" | "landscape">("portrait");
 
   // Tab - temporarily disable cashier
   const [activeTab, setActiveTab] = useState<"qris" | "cashier">("qris");
@@ -297,30 +296,59 @@ export default function AdminPage() {
             @page {
               margin: 0;
               padding: 0;
+              size: auto;
+            }
+
+            /* 4x6 portrait pages - 4 inch x 6 inch at 96 DPI = 384px x 576px */
+            @page portrait-4x6 {
+              size: 4in 6in;
+              margin: 0;
+            }
+
+            /* 4x6 landscape pages - 6 inch x 4 inch at 96 DPI = 576px x 384px */
+            @page landscape-4x6 {
+              size: 6in 4in;
+              margin: 0;
+            }
+
+            /* 2x6 portrait pages - 2 inch x 6 inch at 96 DPI = 192px x 576px */
+            @page portrait-2x6 {
+              size: 2in 6in;
+              margin: 0;
+            }
+
+            /* 2x6 landscape pages - 6 inch x 2 inch at 96 DPI = 576px x 192px */
+            @page landscape-2x6 {
+              size: 6in 2in;
+              margin: 0;
             }
 
             /* 4x6 portrait pages */
             .print-page[data-size="4x6"][data-orientation="portrait"] {
-              width: 384px;
-              height: 576px;
+              width: 4in;
+              height: 6in;
+              page: portrait-4x6;
             }
 
             /* 4x6 landscape pages */
             .print-page[data-size="4x6"][data-orientation="landscape"] {
-              width: 576px;
-              height: 384px;
+              width: 6in;
+              height: 4in;
+              page: landscape-4x6;
             }
 
             /* 2x6 portrait pages */
             .print-page[data-size="2x6"][data-orientation="portrait"] {
-              width: 192px;
-              height: 576px;
+              width: 2in;
+              height: 6in;
+              page: portrait-2x6;
             }
 
             /* 2x6 landscape pages */
             .print-page[data-size="2x6"][data-orientation="landscape"] {
-              width: 576px;
-              height: 192px;
+              width: 6in;
+              height: 2in;
+              page: landscape-2x6;
             }
 
             @media print {

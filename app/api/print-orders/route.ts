@@ -251,6 +251,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Photo files are required" }, { status: 400 });
     }
 
+    // Validate file sizes (max 10MB per file, max 50MB total)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    const MAX_TOTAL_SIZE = 50 * 1024 * 1024; // 50MB
+    let totalSize = 0;
+
+    for (const photoFile of photoFiles) {
+      if (photoFile.size > MAX_FILE_SIZE) {
+        return NextResponse.json({ 
+          error: `File ${photoFile.name} terlalu besar. Maksimal 10MB per file.` 
+        }, { status: 413 });
+      }
+      totalSize += photoFile.size;
+    }
+
+    if (totalSize > MAX_TOTAL_SIZE) {
+      return NextResponse.json({ 
+        error: `Total ukuran file terlalu besar. Maksimal 50MB.` 
+      }, { status: 413 });
+    }
+
     // Parse per-photo sizes from FormData
     const photoSizesJson = String(formData.get("photo_sizes") ?? "[]");
     let photoSizes: SizeKey[] = [];
