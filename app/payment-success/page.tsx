@@ -23,32 +23,63 @@ function PaymentSuccessContent() {
   const [order, setOrder] = useState<Order | null>(null);
 
   useEffect(() => {
+    const invoice = searchParams.get("invoice_number");
+    const dokuOrderId = searchParams.get("order_id");
+
+    if (!invoice) {
+      setStatus("error");
+      return;
+    }
+
+    let pollCount = 0;
+    const maxPolls = 30; // Poll for up to 3 minutes (30 * 6 seconds)
+
     const checkPaymentStatus = async () => {
-      const invoice = searchParams.get("invoice_number");
-      const dokuOrderId = searchParams.get("order_id");
-
-      if (!invoice) {
-        setStatus("error");
-        return;
-      }
-
       try {
-        // Check order status
-        const res = await fetch(`/api/orders/${dokuOrderId || invoice}`);
+        // Check payment status via polling API
+        const res = await fetch(`/api/check-payment-status?order_id=${dokuOrderId || invoice}`);
         if (res.ok) {
           const data = await res.json();
-          setOrder(data);
-          setStatus("success");
+          setOrder(data.order);
+          
+          if (data.status === "PAID") {
+            setStatus("success");
+            return true; // Payment confirmed
+          } else {
+            // Continue polling
+            return false;
+          }
         } else {
-          setStatus("error");
+          console.error("Check status error:", res.status);
+          return false;
         }
       } catch (err) {
         console.error("Check status error:", err);
-        setStatus("error");
+        return false;
       }
     };
 
-    checkPaymentStatus();
+    // Initial check
+    checkPaymentStatus().then((confirmed) => {
+      if (confirmed) return;
+
+      // Poll every 6 seconds
+      const interval = setInterval(async () => {
+        pollCount++;
+        if (pollCount >= maxPolls) {
+          clearInterval(interval);
+          setStatus("success"); // Show success even if not confirmed (fallback)
+          return;
+        }
+
+        const confirmed = await checkPaymentStatus();
+        if (confirmed) {
+          clearInterval(interval);
+        }
+      }, 6000);
+
+      return () => clearInterval(interval);
+    });
   }, [searchParams]);
 
   const downloadImages = async () => {
@@ -137,6 +168,15 @@ function PaymentSuccessContent() {
                 Download Gambar ({order.image_urls?.length || 0})
               </button>
             </div>
+          </div>
+        )}
+
+        {order && order.status === "PENDING" && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-6">
+            <p className="text-xs text-yellow-800">
+              ⚠️ Status pembayaran masih PENDING. Jika pembayaran sudah berhasil, 
+              tunjukkan Order ID ini ke admin untuk konfirmasi manual.
+            </p>
           </div>
         )}
 
