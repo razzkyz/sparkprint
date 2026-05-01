@@ -132,9 +132,21 @@ export async function printPhoto(
 
     /*
     ============================================
-    DOWNLOAD & CONVERT IMAGE TO BASE64
+    SET PROMISE & WEBSOCKET TYPES
     ============================================
-    QZ Tray needs base64 data to avoid CORS issues
+    */
+
+    (qz.api as any).setPromiseType(function promise(resolver: any) {
+      return new Promise(resolver);
+    });
+
+    (qz.api as any).setWebSocketType(function ws(url: string) {
+      return new WebSocket(url);
+    });
+
+    /*
+    ============================================
+    DOWNLOAD & CONVERT IMAGE TO BASE64
     ============================================
     */
 
@@ -145,21 +157,22 @@ export async function printPhoto(
     }
     const blob = await response.blob();
 
-    const base64Data = await new Promise<string>((resolve, reject) => {
+    const imageData = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
+      reader.onload = () => resolve(reader.result as string);
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
 
-    console.log(`[PRINT] Image converted to base64, size: ${base64Data.length} chars`);
+    console.log(`[PRINT] Image converted to base64, size: ${imageData.length} chars`);
 
     /*
     ============================================
-    SET UKURAN PRINT
+    SET UKURAN PRINT (INCHES + DPI)
     ============================================
     */
 
+    const dpi = 300; // DPI for photo quality
     let dimensions;
 
     if (size === '2x6') {
@@ -181,10 +194,15 @@ export async function printPhoto(
     */
 
     const config = (qz.configs as any).create(PRINTER_NAME, {
-      size: dimensions,
+      size: { width: dimensions.width, height: dimensions.height },
       units: 'in',
-      copies,
-      scaling: 'fill' // Full photo without border
+      density: dpi,
+      margins: {
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+      },
     });
 
     /*
@@ -193,13 +211,18 @@ export async function printPhoto(
     ============================================
     */
 
-    const data = [
+    const printData = [
       {
-        type: 'image',
-        format: 'base64',
-        data: base64Data
-      }
-    ];
+        type: 'pixel',
+        format: 'image',
+        data: imageData,
+        options: {
+          width: dimensions.width,
+          height: dimensions.height,
+          stretch: 'fill',
+        },
+      },
+    ] as any;
 
     /*
     ============================================
@@ -207,7 +230,23 @@ export async function printPhoto(
     ============================================
     */
 
-    await (qz as any).print(config, data);
+    console.log(`[PRINT] Printing with dimensions: ${dimensions.width}x${dimensions.height}in at ${dpi} DPI`);
+
+    // Print multiple copies
+    for (let i = 0; i < copies; i++) {
+      try {
+        await (qz as any).print(config, printData);
+        console.log(`[PRINT] Printed copy ${i + 1}/${copies}`);
+
+        // Small delay between copies
+        if (i < copies - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (copyError) {
+        console.error(`[PRINT] Error printing copy ${i + 1}:`, copyError);
+        throw copyError;
+      }
+    }
 
     console.log(`✅ PRINT SUCCESS (${size})`);
   } catch (error) {
