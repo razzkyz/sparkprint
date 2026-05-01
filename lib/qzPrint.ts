@@ -103,6 +103,79 @@ export async function checkPrinters() {
 
 /*
 ========================================================
+FUNGSI RESIZE GAMBAR KE UKURAN PRINT
+========================================================
+Resize gambar ke resolusi yang tepat untuk kertas 4x6 atau 2x6
+dengan proper aspect ratio handling (cover mode)
+========================================================
+*/
+
+async function resizeImageForPrint(imageUrl: string, size: '4x6' | '2x6'): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    img.onload = () => {
+      try {
+        // Target dimensions in pixels at 300 DPI
+        const targetWidth = size === '2x6' ? 600 : 1200;
+        const targetHeight = 1800;
+
+        // Create canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext('2d');
+
+        if (!ctx) {
+          throw new Error('Failed to get canvas context');
+        }
+
+        // Calculate aspect ratios
+        const targetAspect = targetWidth / targetHeight;
+        const imgAspect = img.width / img.height;
+
+        let drawWidth, drawHeight, drawX, drawY;
+
+        if (imgAspect > targetAspect) {
+          // Image is wider than target - fit to height
+          drawHeight = targetHeight;
+          drawWidth = targetHeight * imgAspect;
+          drawX = (targetWidth - drawWidth) / 2;
+          drawY = 0;
+        } else {
+          // Image is taller than target - fit to width
+          drawWidth = targetWidth;
+          drawHeight = targetWidth / imgAspect;
+          drawX = 0;
+          drawY = (targetHeight - drawHeight) / 2;
+        }
+
+        // Draw image centered and scaled to cover
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, targetWidth, targetHeight);
+        ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+
+        // Export to base64
+        const base64 = canvas.toDataURL('image/jpeg', 0.95);
+        console.log(`[RESIZE] Image resized to ${targetWidth}x${targetHeight}px`);
+        resolve(base64);
+      } catch (error) {
+        console.error('[RESIZE] Error:', error);
+        reject(error);
+      }
+    };
+
+    img.onerror = () => {
+      reject(new Error('Failed to load image'));
+    };
+
+    img.src = imageUrl;
+  });
+}
+
+/*
+========================================================
 FUNGSI AUTO PRINT FOTO
 ========================================================
 PARAMETER:
@@ -146,25 +219,14 @@ export async function printPhoto(
 
     /*
     ============================================
-    DOWNLOAD & CONVERT IMAGE TO BASE64
+    RESIZE IMAGE TO PROPER DIMENSIONS
+    ============================================
+    Resize ke resolusi yang tepat untuk kertas (cover mode)
     ============================================
     */
 
-    console.log(`[PRINT] Downloading image: ${imageUrl}`);
-    const response = await fetch(imageUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to download image: ${response.status}`);
-    }
-    const blob = await response.blob();
-
-    const imageData = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-
-    console.log(`[PRINT] Image converted to base64, size: ${imageData.length} chars`);
+    console.log(`[PRINT] Resizing image for ${size} print: ${imageUrl}`);
+    const imageData = await resizeImageForPrint(imageUrl, size);
 
     /*
     ============================================
@@ -216,11 +278,6 @@ export async function printPhoto(
         type: 'pixel',
         format: 'image',
         data: imageData,
-        options: {
-          width: dimensions.width,
-          height: dimensions.height,
-          stretch: 'fill',
-        },
       },
     ] as any;
 
