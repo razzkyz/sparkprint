@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { connectQZ, checkPrinters, printPhoto } from "@/lib/qzPrint";
 
 type OrderStatus = "PENDING" | "PAID" | "PRINTED" | "FAILED" | string;
 
@@ -48,7 +49,39 @@ export default function AdminPage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewImages, setPreviewImages] = useState<string[]>([]);
+  const [qzConnected, setQzConnected] = useState(false);
   const [printingIds, setPrintingIds] = useState<Set<string>>(new Set());
+
+  async function handleConnectQZ() {
+    try {
+      await connectQZ();
+      setQzConnected(true);
+      setMsg("QZ Connected successfully");
+    } catch (err) {
+      console.error("QZ Error:", err);
+      setMsg("QZ Connection failed. Check QZ Tray is running.");
+    }
+  }
+
+  async function handleCheckPrinters() {
+    try {
+      const printers = await checkPrinters();
+      setMsg(`Found printers: ${JSON.stringify(printers)}`);
+    } catch (err) {
+      console.error("Check printers error:", err);
+      setMsg("Failed to check printers");
+    }
+  }
+
+  async function handleTestPrint(imageUrl: string, size: "4x6" | "2x6") {
+    try {
+      await printPhoto(imageUrl, size, 1);
+      setMsg(`Test print ${size} successful`);
+    } catch (err) {
+      console.error("Test print error:", err);
+      setMsg("Test print failed");
+    }
+  }
 
   // Print confirmation modal
   const [printConfirm, setPrintConfirm] = useState<Order | null>(null);
@@ -613,6 +646,22 @@ export default function AdminPage() {
               className="rounded-lg bg-blue-600 px-6 py-2.5 font-semibold text-white shadow-sm hover:bg-blue-700 active:scale-[0.98] transition-all"
             >
               🔄 Refresh
+            </button>
+
+            <button
+              onClick={handleConnectQZ}
+              className={`rounded-lg px-6 py-2.5 font-semibold text-white shadow-sm active:scale-[0.98] transition-all ${
+                qzConnected ? "bg-green-600 hover:bg-green-700" : "bg-purple-600 hover:bg-purple-700"
+              }`}
+            >
+              {qzConnected ? "✓ QZ Connected" : "Connect QZ"}
+            </button>
+
+            <button
+              onClick={handleCheckPrinters}
+              className="rounded-lg bg-orange-600 px-6 py-2.5 font-semibold text-white shadow-sm hover:bg-orange-700 active:scale-[0.98] transition-all"
+            >
+              🔍 Find Printer
             </button>
           </div>
         </div>
