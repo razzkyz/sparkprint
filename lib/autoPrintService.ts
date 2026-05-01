@@ -6,7 +6,7 @@ import { supabaseAdmin } from "./supabaseAdmin";
 interface OrderToPrint {
   id: string;
   image_urls: string[];
-  size: "2x6" | "4x6";
+  size: "4x6";
   qty: number;
   customer_name: string;
   status: string;

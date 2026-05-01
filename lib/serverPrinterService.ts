@@ -18,7 +18,7 @@ interface PrinterConfig {
 interface PrintOptions {
   imageUrl: string;
   quantity: number;
-  size: "2x6" | "4x6";
+  size: "4x6";
   orderId?: string;
 }
 
@@ -249,7 +249,7 @@ export class ServerPrinterService {
 
   /**
    * Print image dari URL
-   * Untuk DHS RX 1: 2x6 = 384px width, 4x6 = 576px width @ 203 DPI
+   * Untuk DHS RX 1: 4x6 = 576px width @ 203 DPI
    */
   async printImage(options: PrintOptions): Promise<void> {
     const { imageUrl, quantity, size, orderId } = options;
@@ -335,7 +335,7 @@ export class ServerPrinterService {
    */
   private async convertImageToThermalBitmap(
     imageBuffer: Buffer,
-    size: "2x6" | "4x6"
+    size: "4x6"
   ): Promise<{ data: Buffer; width: number; height: number }> {
     // Dynamic import sharp (optional dependency)
     let sharp;
@@ -349,9 +349,8 @@ export class ServerPrinterService {
 
     try {
       // DHS RX 1 specs:
-      // - 2x6: 384px width × 576px height @ 203 DPI
       // - 4x6: 576px width × 576px height @ 203 DPI
-      const width = size === "4x6" ? 576 : 384;
+      const width = 576;
       const height = 576;
 
       // Step 1: Load image
@@ -459,8 +458,8 @@ export class ServerPrinterService {
   /**
    * Fallback bitmap untuk testing (simple striped pattern)
    */
-  private createFallbackBitmap(size: "2x6" | "4x6"): { data: Buffer; width: number; height: number } {
-    const width = size === "4x6" ? 576 : 384;
+  private createFallbackBitmap(size: "4x6"): { data: Buffer; width: number; height: number } {
+    const width = 576;
     const height = 576;
     const bytesPerLine = Math.ceil(width / 8);
     const totalBytes = bytesPerLine * height;

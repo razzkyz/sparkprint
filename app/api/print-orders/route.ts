@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendOrderEmail } from "@/lib/email";
 import crypto from "crypto";
 
-type SizeKey = "4x6" | "2x6";
+type SizeKey = "4x6";
 
 function isValidEmail(email: string) {
   if (!email) return true;
@@ -285,7 +285,7 @@ export async function POST(req: Request) {
     }
 
     // Validate all sizes
-    if (!photoSizes.every(size => ["4x6", "2x6"].includes(size))) {
+    if (!photoSizes.every(size => ["4x6"].includes(size))) {
       return NextResponse.json({ error: "Invalid size in photo_sizes" }, { status: 400 });
     }
 

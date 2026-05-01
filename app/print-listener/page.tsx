@@ -68,7 +68,7 @@ export default function PrintListenerPage() {
       const imageUrl = order.image_url;
       addLog(`Printing ${order.qty}x ${order.size} for order #${order.queue_number}`);
 
-      await printService.printImage({ imageUrl, quantity: order.qty, size: order.size as "4x6" | "2x6", orderId: order.id });
+      await printService.printImage({ imageUrl, quantity: order.qty, size: order.size as "4x6", orderId: order.id });
 
       // Mark as printed
       const response = await fetch(`/api/orders/${order.id}/printed`, {

@@ -9,11 +9,10 @@ declare global {
   }
 }
 
-type SizeKey = "4x6" | "2x6";
+type SizeKey = "4x6";
 
 const SIZE_OPTIONS: { key: SizeKey; label: string; desc: string; price: number }[] = [
   { key: "4x6", label: "4×6", desc: "Standard photo", price: 1000 },
-  { key: "2x6", label: "2×6", desc: "Photo strip", price: 1000 },
 ];
 
 function unitPrice(size: SizeKey) {

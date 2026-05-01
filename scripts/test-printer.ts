@@ -31,7 +31,7 @@ async function main() {
     await printer.printImage({
       imageUrl: "", // dummy
       quantity: 1,
-      size: "2x6",
+      size: "4x6",
       orderId: "TEST-001",
     });
     console.log("✅ Test pattern printed!\n");

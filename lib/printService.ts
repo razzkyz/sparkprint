@@ -3,7 +3,7 @@ import qz from "qz-tray";
 
 let qzConnected = false;
 
-type PrintSize = "2x6" | "4x6";
+type PrintSize = "4x6";
 
 interface PrintOptions {
   imageUrl: string;
@@ -68,21 +68,17 @@ export const printService = {
 
   /**
    * Get dimensions for print size
-   * 2x6 = 2 inches width x 6 inches height
    * 4x6 = 4 inches width x 6 inches height
    * DPI = 300 for photo quality
    */
   getPrintDimensions(size: PrintSize): { width: number; height: number; dpi: number } {
     const dpi = 300; // DPI for DHS RX 1
-    if (size === "4x6") {
-      return { width: 4, height: 6, dpi };
-    }
-    return { width: 2, height: 6, dpi };
+    return { width: 4, height: 6, dpi };
   },
 
   /**
    * Resize and optimize image for printing
-   * This ensures the photo fits perfectly in 2x6 or 4x6 format
+   * This ensures the photo fits perfectly in 4x6 format
    */
   async prepareImageForPrint(imageUrl: string, size: PrintSize): Promise<string> {
     try {

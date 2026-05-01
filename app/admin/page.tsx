@@ -82,7 +82,7 @@ export default function AdminPage() {
   // Filters
   const [status, setStatus] = useState<"ALL" | "PENDING" | "PAID" | "PRINTED" | "FAILED">("PAID");
   const [needsPrint, setNeedsPrint] = useState(false);
-  const [sizeFilter, setSizeFilter] = useState<"ALL" | "4x6" | "strip">("ALL");
+  const [sizeFilter, setSizeFilter] = useState<"ALL" | "4x6">("ALL");
   const [q, setQ] = useState("");
 
   // Sort
@@ -414,7 +414,6 @@ export default function AdminPage() {
             >
               <option value="ALL">Semua Ukuran</option>
               <option value="4x6">📷 4×6</option>
-              <option value="strip">📸 2×6 Strip</option>
             </select>
           </div>
 
