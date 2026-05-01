@@ -110,7 +110,6 @@ async function createDokuTransaction(
         amount: amount,
         invoice_number: orderId,
         currency: "IDR",
-        callback_url: `https://hogzjapnkvsihvvbgcdb.supabase.co/functions/v1/doku-webhook`,
         finish_redirect_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment-success?invoice_number=${orderId}&order_id=${orderId}`,
         language: "ID",
         auto_redirect: false,

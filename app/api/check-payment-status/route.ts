@@ -28,7 +28,9 @@ export async function GET(request: Request) {
     }
 
     // Auto-update to PAID if requested and status is still PENDING
+    console.log("[CHECK] Auto-mark check:", { autoMarkPaid, status: order.status, paidAt: order.paid_at });
     if (autoMarkPaid && order.status === "PENDING" && !order.paid_at) {
+      console.log("[CHECK] Attempting to update order to PAID:", orderId);
       const { error: updateError } = await supabaseAdmin
         .from("print_orders")
         .update({ 
