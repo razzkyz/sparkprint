@@ -48,12 +48,41 @@ yang ada di PC printer
 
 export async function connectQZ() {
   try {
-    if (!qz.websocket.isActive()) {
-      await qz.websocket.connect();
-      console.log('✅ QZ Connected');
+    console.log('[QZ] Starting connection...');
+
+    // Set promise type
+    (qz.api as any).setPromiseType(function promise(resolver: any) {
+      return new Promise(resolver);
+    });
+
+    // Set WebSocket type
+    (qz.api as any).setWebSocketType(function ws(url: string) {
+      return new WebSocket(url);
+    });
+
+    console.log('[QZ] Promise and WebSocket types set');
+
+    // Cek connection status
+    const isActive = (qz.websocket as any).isActive();
+    console.log('[QZ] Connection active:', isActive);
+
+    if (isActive) {
+      console.log('✅ QZ Already connected');
+      return;
     }
+
+    // Connect
+    console.log('[QZ] Connecting to QZ Tray...');
+    await (qz.websocket as any).connect();
+
+    // Wait for stabilization
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    console.log('✅ QZ Connected');
   } catch (error) {
     console.error('❌ QZ Connection Error:', error);
+    console.error('Error details:', JSON.stringify(error, null, 2));
+    throw error;
   }
 }
 
