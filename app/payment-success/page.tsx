@@ -36,8 +36,8 @@ function PaymentSuccessContent() {
 
     const checkPaymentStatus = async () => {
       try {
-        // Check payment status via polling API
-        const res = await fetch(`/api/check-payment-status?order_id=${dokuOrderId || invoice}`);
+        // Check payment status via polling API and auto-mark as PAID
+        const res = await fetch(`/api/check-payment-status?order_id=${dokuOrderId || invoice}&auto_mark_paid=true`);
         if (res.ok) {
           const data = await res.json();
           setOrder(data.order);
