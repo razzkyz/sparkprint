@@ -132,6 +132,30 @@ export async function printPhoto(
 
     /*
     ============================================
+    DOWNLOAD & CONVERT IMAGE TO BASE64
+    ============================================
+    QZ Tray needs base64 data to avoid CORS issues
+    ============================================
+    */
+
+    console.log(`[PRINT] Downloading image: ${imageUrl}`);
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to download image: ${response.status}`);
+    }
+    const blob = await response.blob();
+
+    const base64Data = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+    console.log(`[PRINT] Image converted to base64, size: ${base64Data.length} chars`);
+
+    /*
+    ============================================
     SET UKURAN PRINT
     ============================================
     */
@@ -159,7 +183,8 @@ export async function printPhoto(
     const config = (qz.configs as any).create(PRINTER_NAME, {
       size: dimensions,
       units: 'in',
-      copies
+      copies,
+      scaling: 'fill' // Full photo without border
     });
 
     /*
@@ -171,8 +196,8 @@ export async function printPhoto(
     const data = [
       {
         type: 'image',
-        format: 'file',
-        data: imageUrl
+        format: 'base64',
+        data: base64Data
       }
     ];
 
@@ -187,6 +212,7 @@ export async function printPhoto(
     console.log(`✅ PRINT SUCCESS (${size})`);
   } catch (error) {
     console.error('❌ PRINT ERROR:', error);
+    throw error;
   }
 }
 

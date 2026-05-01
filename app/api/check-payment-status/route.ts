@@ -12,18 +12,44 @@ export async function GET(request: Request) {
     const orderId = searchParams.get("order_id");
     const autoMarkPaid = searchParams.get("auto_mark_paid") === "true";
 
+    console.log("[CHECK] Request received:", { orderId, autoMarkPaid });
+
     if (!orderId) {
+      console.log("[CHECK] Missing order_id");
       return NextResponse.json({ error: "order_id required" }, { status: 400 });
     }
 
-    // Check order in database
-    const { data: order, error: orderError } = await supabaseAdmin
+    // Check order in database - try doku_order_id first, then invoice_number
+    let order;
+    let orderError;
+
+    // Try by doku_order_id first
+    const { data: orderById, error: errorById } = await supabaseAdmin
       .from("print_orders")
       .select("id, status, doku_order_id, customer_name, customer_email, image_urls, size, qty, amount, queue_number, paid_at")
       .eq("doku_order_id", orderId)
       .single();
 
+    if (!errorById && orderById) {
+      order = orderById;
+    } else {
+      // Try by invoice_number (id field)
+      console.log("[CHECK] Not found by doku_order_id, trying by invoice_number:", orderId);
+      const { data: orderByInvoice, error: errorByInvoice } = await supabaseAdmin
+        .from("print_orders")
+        .select("id, status, doku_order_id, customer_name, customer_email, image_urls, size, qty, amount, queue_number, paid_at")
+        .eq("id", orderId)
+        .single();
+
+      if (!errorByInvoice && orderByInvoice) {
+        order = orderByInvoice;
+      } else {
+        orderError = errorByInvoice || errorById;
+      }
+    }
+
     if (orderError || !order) {
+      console.error("[CHECK] Order not found:", orderId, orderError);
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 

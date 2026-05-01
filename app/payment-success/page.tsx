@@ -36,25 +36,29 @@ function PaymentSuccessContent() {
 
     const checkPaymentStatus = async () => {
       try {
+        console.log("[PAYMENT-SUCCESS] Checking payment status:", { dokuOrderId, invoice, pollCount });
         // Check payment status via polling API and auto-mark as PAID
         const res = await fetch(`/api/check-payment-status?order_id=${dokuOrderId || invoice}&auto_mark_paid=true`);
         if (res.ok) {
           const data = await res.json();
+          console.log("[PAYMENT-SUCCESS] Status response:", data);
           setOrder(data.order);
-          
+
           if (data.status === "PAID") {
+            console.log("[PAYMENT-SUCCESS] Payment confirmed as PAID");
             setStatus("success");
             return true; // Payment confirmed
           } else {
+            console.log("[PAYMENT-SUCCESS] Payment not yet PAID, current status:", data.status);
             // Continue polling
             return false;
           }
         } else {
-          console.error("Check status error:", res.status);
+          console.error("[PAYMENT-SUCCESS] Check status error:", res.status);
           return false;
         }
       } catch (err) {
-        console.error("Check status error:", err);
+        console.error("[PAYMENT-SUCCESS] Check status error:", err);
         return false;
       }
     };
