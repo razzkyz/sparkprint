@@ -50,17 +50,12 @@ export async function connectQZ() {
   try {
     console.log('[QZ] Starting connection...');
 
-    // Set promise type
+    // Set promise type only (QZ Tray uses built-in WebSocket)
     (qz.api as any).setPromiseType(function promise(resolver: any) {
       return new Promise(resolver);
     });
 
-    // Set WebSocket type
-    (qz.api as any).setWebSocketType(function ws(url: string) {
-      return new WebSocket(url);
-    });
-
-    console.log('[QZ] Promise and WebSocket types set');
+    console.log('[QZ] Promise type set');
 
     // Cek connection status
     const isActive = (qz.websocket as any).isActive();
