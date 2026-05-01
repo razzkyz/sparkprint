@@ -48,27 +48,38 @@ yang ada di PC printer
 
 export async function connectQZ() {
   try {
-    // Set promise type dan websocket type sebelum connect
+    // Set promise type for QZ Tray
     (qz.api as any).setPromiseType(function promise(resolver: any) {
       return new Promise(resolver);
     });
 
+    // Set WebSocket type
     (qz.api as any).setWebSocketType(function ws(url: string) {
       return new WebSocket(url);
     });
 
     // Cek apakah sudah connected
-    if (qz.websocket.isActive()) {
+    if ((qz.websocket as any).isActive()) {
       console.log('✅ QZ Already connected');
       return;
     }
 
-    // Connect ke QZ Tray
-    await qz.websocket.connect();
+    // Connect to QZ Tray
+    await (qz.websocket as any).connect();
+
+    // Wait a bit for connection to stabilize
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     console.log('✅ QZ Connected');
   } catch (error) {
     console.error('❌ QZ Connection Error:', error);
-    throw error;
+    throw new Error(
+      'QZ Tray connection failed. Please ensure:\n' +
+      '1. QZ Tray application is running\n' +
+      '2. Certificate is configured (Settings → Certificates)\n' +
+      '3. Domain is allowed in certificate settings\n' +
+      '4. Using HTTPS in production'
+    );
   }
 }
 
@@ -83,9 +94,8 @@ Dipakai jika ingin disconnect manual
 
 export async function disconnectQZ() {
   try {
-    if (qz.websocket.isActive()) {
+    if ((qz.websocket as any).isActive()) {
       await qz.websocket.disconnect();
-
       console.log('🔌 QZ Disconnected');
     }
   } catch (error) {
