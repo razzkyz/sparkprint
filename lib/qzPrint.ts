@@ -48,13 +48,27 @@ yang ada di PC printer
 
 export async function connectQZ() {
   try {
-    if (!qz.websocket.isActive()) {
-      await qz.websocket.connect();
+    // Set promise type dan websocket type sebelum connect
+    (qz.api as any).setPromiseType(function promise(resolver: any) {
+      return new Promise(resolver);
+    });
 
-      console.log('✅ QZ Connected');
+    (qz.api as any).setWebSocketType(function ws(url: string) {
+      return new WebSocket(url);
+    });
+
+    // Cek apakah sudah connected
+    if (qz.websocket.isActive()) {
+      console.log('✅ QZ Already connected');
+      return;
     }
+
+    // Connect ke QZ Tray
+    await qz.websocket.connect();
+    console.log('✅ QZ Connected');
   } catch (error) {
     console.error('❌ QZ Connection Error:', error);
+    throw error;
   }
 }
 
@@ -202,20 +216,6 @@ export async function printPhoto(
     */
 
     await connectQZ();
-
-    /*
-    ============================================
-    SET PROMISE & WEBSOCKET TYPES
-    ============================================
-    */
-
-    (qz.api as any).setPromiseType(function promise(resolver: any) {
-      return new Promise(resolver);
-    });
-
-    (qz.api as any).setWebSocketType(function ws(url: string) {
-      return new WebSocket(url);
-    });
 
     /*
     ============================================
