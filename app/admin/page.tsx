@@ -73,16 +73,6 @@ export default function AdminPage() {
     }
   }
 
-  async function handleTestPrint(imageUrl: string, size: "4x6" | "2x6") {
-    try {
-      await printPhoto(imageUrl, size, 1);
-      setMsg(`Test print ${size} successful`);
-    } catch (err) {
-      console.error("Test print error:", err);
-      setMsg("Test print failed");
-    }
-  }
-
   // Print confirmation modal
   const [printConfirm, setPrintConfirm] = useState<Order | null>(null);
 
@@ -192,16 +182,10 @@ export default function AdminPage() {
         return;
       }
 
-      // Get photo sizes (per-photo or fallback to order size)
-      const photoSizes = order.photo_sizes && order.photo_sizes.length > 0
-        ? order.photo_sizes
-        : Array(imageUrls.length).fill(order.size);
-
-      // Print each image using QZ Tray
+      // Print each image using QZ Tray (always 4x6)
       for (let i = 0; i < imageUrls.length; i++) {
-        const size = photoSizes[i] === "strip" ? "2x6" : (photoSizes[i] as "4x6" | "2x6") || "4x6";
-        console.log(`[PRINT] Printing image ${i + 1}/${imageUrls.length} with size ${size}`);
-        await printPhoto(imageUrls[i], size, 1);
+        console.log(`[PRINT] Printing image ${i + 1}/${imageUrls.length} (4x6)`);
+        await printPhoto(imageUrls[i], 1);
       }
 
       // ============= MARK AS PRINTED =============

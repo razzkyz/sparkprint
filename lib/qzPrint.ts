@@ -132,15 +132,15 @@ dengan proper aspect ratio handling (cover mode)
 ========================================================
 */
 
-async function resizeImageForPrint(imageUrl: string, size: '4x6' | '2x6'): Promise<string> {
+async function resizeImageForPrint(imageUrl: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
 
     img.onload = () => {
       try {
-        // Target dimensions in pixels at 300 DPI
-        const targetWidth = size === '2x6' ? 600 : 1200;
+        // Target dimensions in pixels at 300 DPI for 4x6
+        const targetWidth = 1200;
         const targetHeight = 1800;
 
         // Create canvas
@@ -160,27 +160,27 @@ async function resizeImageForPrint(imageUrl: string, size: '4x6' | '2x6'): Promi
         let drawWidth, drawHeight, drawX, drawY;
 
         if (imgAspect > targetAspect) {
-          // Image is wider than target - fit to height
-          drawHeight = targetHeight;
-          drawWidth = targetHeight * imgAspect;
-          drawX = (targetWidth - drawWidth) / 2;
-          drawY = 0;
-        } else {
-          // Image is taller than target - fit to width
+          // Image is wider than target - scale to fill width, crop height
           drawWidth = targetWidth;
           drawHeight = targetWidth / imgAspect;
           drawX = 0;
           drawY = (targetHeight - drawHeight) / 2;
+        } else {
+          // Image is taller than target - scale to fill height, crop width
+          drawHeight = targetHeight;
+          drawWidth = targetHeight * imgAspect;
+          drawX = (targetWidth - drawWidth) / 2;
+          drawY = 0;
         }
 
-        // Draw image centered and scaled to cover
+        // Draw image centered and scaled to cover (crop excess)
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, targetWidth, targetHeight);
         ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 
         // Export to base64
         const base64 = canvas.toDataURL('image/jpeg', 0.95);
-        console.log(`[RESIZE] Image resized to ${targetWidth}x${targetHeight}px`);
+        console.log(`[RESIZE] Image resized to ${targetWidth}x${targetHeight}px, original: ${img.width}x${img.height}`);
         resolve(base64);
       } catch (error) {
         console.error('[RESIZE] Error:', error);
@@ -202,18 +202,16 @@ FUNGSI AUTO PRINT FOTO
 ========================================================
 PARAMETER:
 - imageUrl = link gambar hasil photobooth
-- size = 4x6 atau 2x6
 - copies = jumlah print
 
 CONTOH:
-await printPhoto(photoUrl, '4x6', 1);
+await printPhoto(photoUrl, 1);
 
 ========================================================
 */
 
 export async function printPhoto(
   imageUrl: string,
-  size: '4x6' | '2x6' = '4x6',
   copies: number = 1
 ) {
   try {
@@ -229,12 +227,12 @@ export async function printPhoto(
     ============================================
     RESIZE IMAGE TO PROPER DIMENSIONS
     ============================================
-    Resize ke resolusi yang tepat untuk kertas (cover mode)
+    Resize ke resolusi yang tepat untuk kertas 4x6 (cover mode)
     ============================================
     */
 
-    console.log(`[PRINT] Resizing image for ${size} print: ${imageUrl}`);
-    const imageData = await resizeImageForPrint(imageUrl, size);
+    console.log(`[PRINT] Resizing image for 4x6 print: ${imageUrl}`);
+    const imageData = await resizeImageForPrint(imageUrl);
 
     /*
     ============================================
@@ -243,19 +241,10 @@ export async function printPhoto(
     */
 
     const dpi = 300; // DPI for photo quality
-    let dimensions;
-
-    if (size === '2x6') {
-      dimensions = {
-        width: 2,
-        height: 6
-      };
-    } else {
-      dimensions = {
-        width: 4,
-        height: 6
-      };
-    }
+    const dimensions = {
+      width: 4,
+      height: 6
+    };
 
     /*
     ============================================
@@ -313,7 +302,7 @@ export async function printPhoto(
       }
     }
 
-    console.log(`✅ PRINT SUCCESS (${size})`);
+    console.log(`✅ PRINT SUCCESS (4x6)`);
   } catch (error) {
     console.error('❌ PRINT ERROR:', error);
     throw error;
@@ -359,8 +348,6 @@ export async function handlePaidOrder(order: any) {
     ============================================
     */
 
-    const size = order.print_size || '4x6';
-
     const photoUrl = order.photo_url;
 
     const qty = order.qty || 1;
@@ -383,7 +370,7 @@ export async function handlePaidOrder(order: any) {
     ============================================
     */
 
-    await printPhoto(photoUrl, size, qty);
+    await printPhoto(photoUrl, qty);
 
     console.log('🎉 ORDER PRINTED');
   } catch (error) {
