@@ -351,7 +351,7 @@ export async function POST(req: Request) {
     console.log("[API] All files uploaded. Total:", imageUrls.length);
 
     // Calculate amount: sum of price per photo size
-    const unitPrice = 1000;
+    const unitPrice = 10; // Testing price
     const amount = photoSizes.reduce((sum) => sum + unitPrice, 0);
 
     // Generate order ID
