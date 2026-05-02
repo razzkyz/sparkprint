@@ -142,20 +142,36 @@ async function resizeImageForPrint(imageUrl: string, orientation: PrintOrientati
 
     img.onload = () => {
       try {
+        // Auto-detect orientation from image
+        const imgAspect = img.width / img.height;
+        const isImgLandscape = imgAspect > 1;
+
         // Target dimensions in pixels at 300 DPI
         // Portrait: 4x6 = 1200x1800px
         // Landscape: 6x4 = 1800x1200px
         let targetWidth, targetHeight;
 
-        if (orientation === 'landscape') {
+        // Auto-rotate: if image is landscape and orientation is portrait, switch to landscape
+        if (orientation === 'portrait' && isImgLandscape) {
+          console.log(`[RESIZE] Auto-rotating to landscape based on image aspect ratio`);
           targetWidth = 1800;
           targetHeight = 1200;
-        } else {
+        } else if (orientation === 'landscape' && !isImgLandscape) {
+          console.log(`[RESIZE] Auto-rotating to portrait based on image aspect ratio`);
           targetWidth = 1200;
           targetHeight = 1800;
+        } else {
+          // Use specified orientation
+          if (orientation === 'landscape') {
+            targetWidth = 1800;
+            targetHeight = 1200;
+          } else {
+            targetWidth = 1200;
+            targetHeight = 1800;
+          }
         }
 
-        console.log(`[RESIZE] Orientation: ${orientation}, Target: ${targetWidth}x${targetHeight}px`);
+        console.log(`[RESIZE] Target: ${targetWidth}x${targetHeight}px, Original: ${img.width}x${img.height}`);
 
         // Create canvas
         const canvas = document.createElement('canvas');
@@ -167,14 +183,39 @@ async function resizeImageForPrint(imageUrl: string, orientation: PrintOrientati
           throw new Error('Failed to get canvas context');
         }
 
-        // STRETCH MODE: Force image to fill entire canvas (may distort aspect ratio)
+        // High quality image smoothing
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        // CONTAIN MODE: Fit image within canvas without cropping
+        const targetAspect = targetWidth / targetHeight;
+
+        let drawWidth, drawHeight, drawX, drawY;
+
+        if (imgAspect > targetAspect) {
+          // Image is wider than target - fit to width
+          drawWidth = targetWidth;
+          drawHeight = targetWidth / imgAspect;
+          drawX = 0;
+          drawY = (targetHeight - drawHeight) / 2;
+        } else {
+          // Image is taller than target - fit to height
+          drawHeight = targetHeight;
+          drawWidth = targetHeight * imgAspect;
+          drawX = (targetWidth - drawWidth) / 2;
+          drawY = 0;
+        }
+
+        // Fill white background
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, targetWidth, targetHeight);
-        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
-        // Export to base64
-        const base64 = canvas.toDataURL('image/jpeg', 0.95);
-        console.log(`[RESIZE] Image stretched to ${targetWidth}x${targetHeight}px (${orientation}), original: ${img.width}x${img.height}`);
+        // Draw image centered (contain mode - no crop)
+        ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+
+        // Export to base64 with high quality
+        const base64 = canvas.toDataURL('image/jpeg', 0.98);
+        console.log(`[RESIZE] Image fitted to ${targetWidth}x${targetHeight}px (contain mode), original: ${img.width}x${img.height}`);
         resolve(base64);
       } catch (error) {
         console.error('[RESIZE] Error:', error);
