@@ -127,21 +127,35 @@ export async function checkPrinters() {
 ========================================================
 FUNGSI RESIZE GAMBAR KE UKURAN PRINT
 ========================================================
-Resize gambar ke resolusi yang tepat untuk kertas 4x6 atau 2x6
+Resize gambar ke resolusi yang tepat untuk kertas 4x6
 dengan proper aspect ratio handling (cover mode)
+Mendukung orientation: portrait (4x6) atau landscape (6x4)
 ========================================================
 */
 
-async function resizeImageForPrint(imageUrl: string): Promise<string> {
+export type PrintOrientation = 'portrait' | 'landscape';
+
+async function resizeImageForPrint(imageUrl: string, orientation: PrintOrientation = 'portrait'): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
 
     img.onload = () => {
       try {
-        // Target dimensions in pixels at 300 DPI for 4x6
-        const targetWidth = 1200;
-        const targetHeight = 1800;
+        // Target dimensions in pixels at 300 DPI
+        // Portrait: 4x6 = 1200x1800px
+        // Landscape: 6x4 = 1800x1200px
+        let targetWidth, targetHeight;
+
+        if (orientation === 'landscape') {
+          targetWidth = 1800;
+          targetHeight = 1200;
+        } else {
+          targetWidth = 1200;
+          targetHeight = 1800;
+        }
+
+        console.log(`[RESIZE] Orientation: ${orientation}, Target: ${targetWidth}x${targetHeight}px`);
 
         // Create canvas
         const canvas = document.createElement('canvas');
@@ -180,7 +194,7 @@ async function resizeImageForPrint(imageUrl: string): Promise<string> {
 
         // Export to base64
         const base64 = canvas.toDataURL('image/jpeg', 0.95);
-        console.log(`[RESIZE] Image resized to ${targetWidth}x${targetHeight}px, original: ${img.width}x${img.height}`);
+        console.log(`[RESIZE] Image resized to ${targetWidth}x${targetHeight}px (${orientation}), original: ${img.width}x${img.height}`);
         resolve(base64);
       } catch (error) {
         console.error('[RESIZE] Error:', error);
@@ -202,16 +216,18 @@ FUNGSI AUTO PRINT FOTO
 ========================================================
 PARAMETER:
 - imageUrl = link gambar hasil photobooth
+- orientation = portrait (4x6) atau landscape (6x4)
 - copies = jumlah print
 
 CONTOH:
-await printPhoto(photoUrl, 1);
+await printPhoto(photoUrl, 'portrait', 1);
 
 ========================================================
 */
 
 export async function printPhoto(
   imageUrl: string,
+  orientation: PrintOrientation = 'portrait',
   copies: number = 1
 ) {
   try {
@@ -227,12 +243,12 @@ export async function printPhoto(
     ============================================
     RESIZE IMAGE TO PROPER DIMENSIONS
     ============================================
-    Resize ke resolusi yang tepat untuk kertas 4x6 (cover mode)
+    Resize ke resolusi yang tepat untuk kertas (cover mode)
     ============================================
     */
 
-    console.log(`[PRINT] Resizing image for 4x6 print: ${imageUrl}`);
-    const imageData = await resizeImageForPrint(imageUrl);
+    console.log(`[PRINT] Resizing image for ${orientation} print: ${imageUrl}`);
+    const imageData = await resizeImageForPrint(imageUrl, orientation);
 
     /*
     ============================================
@@ -241,10 +257,19 @@ export async function printPhoto(
     */
 
     const dpi = 300; // DPI for photo quality
-    const dimensions = {
-      width: 4,
-      height: 6
-    };
+    let dimensions;
+
+    if (orientation === 'landscape') {
+      dimensions = {
+        width: 6,
+        height: 4
+      };
+    } else {
+      dimensions = {
+        width: 4,
+        height: 6
+      };
+    }
 
     /*
     ============================================
@@ -302,7 +327,7 @@ export async function printPhoto(
       }
     }
 
-    console.log(`✅ PRINT SUCCESS (4x6)`);
+    console.log(`✅ PRINT SUCCESS (${orientation})`);
   } catch (error) {
     console.error('❌ PRINT ERROR:', error);
     throw error;
