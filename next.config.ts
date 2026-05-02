@@ -5,6 +5,12 @@ const nextConfig: NextConfig = {
   turbopack: {
     // Turbopack config for Next.js 16+
   },
+  // Increase body size limit for multiple image uploads
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '50mb',
+    },
+  },
 };
 
 export default nextConfig;

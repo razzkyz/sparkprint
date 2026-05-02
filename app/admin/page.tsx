@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { connectQZ, checkPrinters, printPhoto, type PrintOrientation } from "@/lib/qzPrint";
+import { connectQZ, checkPrinters, printPhoto } from "@/lib/qzPrint";
 
 type OrderStatus = "PENDING" | "PAID" | "PRINTED" | "FAILED" | string;
 
@@ -83,7 +83,6 @@ export default function AdminPage() {
   const [status, setStatus] = useState<"ALL" | "PENDING" | "PAID" | "PRINTED" | "FAILED">("PAID");
   const [needsPrint, setNeedsPrint] = useState(false);
   const [sizeFilter, setSizeFilter] = useState<"ALL" | "4x6">("ALL");
-  const [printOrientation, setPrintOrientation] = useState<PrintOrientation>("portrait");
   const [q, setQ] = useState("");
 
   // Sort
@@ -183,10 +182,10 @@ export default function AdminPage() {
         return;
       }
 
-      // Print each image using QZ Tray with selected orientation
+      // Print each image using QZ Tray (forced landscape)
       for (let i = 0; i < imageUrls.length; i++) {
-        console.log(`[PRINT] Printing image ${i + 1}/${imageUrls.length} (${printOrientation})`);
-        await printPhoto(imageUrls[i], printOrientation, 1);
+        console.log(`[PRINT] Printing image ${i + 1}/${imageUrls.length} (landscape)`);
+        await printPhoto(imageUrls[i], 'landscape', 1);
       }
 
       // ============= MARK AS PRINTED =============
@@ -329,15 +328,6 @@ export default function AdminPage() {
             >
               🔍 Find Printer
             </button>
-
-            <select
-              value={printOrientation}
-              onChange={(e) => setPrintOrientation(e.target.value as PrintOrientation)}
-              className="rounded-lg bg-gray-700 px-4 py-2.5 font-semibold text-white shadow-sm hover:bg-gray-800 active:scale-[0.98] transition-all"
-            >
-              <option value="portrait">📷 Portrait (4×6)</option>
-              <option value="landscape">📸 Landscape (6×4)</option>
-            </select>
           </div>
         </div>
 

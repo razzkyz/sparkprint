@@ -91,7 +91,7 @@ export default function KioskPage() {
     setTimeout(() => fileInputRef.current?.focus(), 50);
   }
 
-  // Compress image to reduce file size
+  // Compress image to reduce file size (landscape mode for print consistency)
   async function compressImage(file: File): Promise<Blob> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -103,17 +103,18 @@ export default function KioskPage() {
           const canvas = document.createElement("canvas");
           let { width, height } = img;
 
-          const maxWidth = 1200;
-          const maxHeight = 1800;
+          // Landscape dimensions for print consistency (1800x1200 @ 300 DPI)
+          const maxWidth = 1800;
+          const maxHeight = 1200;
 
           if (width > height) {
             if (width > maxWidth) {
-              height = Math.round((height * maxWidth) / width);
+              height = (maxWidth / width) * height;
               width = maxWidth;
             }
           } else {
             if (height > maxHeight) {
-              width = Math.round((width * maxHeight) / height);
+              width = (maxHeight / height) * width;
               height = maxHeight;
             }
           }
@@ -121,21 +122,24 @@ export default function KioskPage() {
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext("2d");
-          ctx?.drawImage(img, 0, 0, width, height);
+          if (!ctx) {
+            reject(new Error("Failed to get canvas context"));
+            return;
+          }
 
-          // WebP format lebih kecil dari JPEG
+          ctx.drawImage(img, 0, 0, width, height);
           canvas.toBlob(
             (blob) => {
               if (blob) resolve(blob);
-              else reject(new Error("Canvas compression failed"));
+              else reject(new Error("Compression failed"));
             },
             "image/webp",
-            0.6  // More aggressive compression (was 0.7) to reduce file size for multiple photos
+            0.85
           );
         };
-        img.onerror = () => reject(new Error("Image load failed"));
+        img.onerror = () => reject(new Error("Failed to load image"));
       };
-      reader.onerror = () => reject(new Error("FileReader error"));
+      reader.onerror = () => reject(new Error("Failed to read file"));
     });
   }
 
@@ -144,9 +148,9 @@ export default function KioskPage() {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    // Allow up to 3 photos
-    if (files.length > 3) {
-      setStatus({ kind: "err", text: "Maksimal 3 foto yang boleh diupload sekaligus. Silakan pilih maksimal 3 foto." });
+    // Allow up to 5 photos
+    if (files.length > 5) {
+      setStatus({ kind: "err", text: "Maksimal 5 foto yang boleh diupload sekaligus. Silakan pilih maksimal 5 foto." });
       e.target.value = "";
       return;
     }

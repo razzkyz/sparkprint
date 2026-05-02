@@ -142,36 +142,11 @@ async function resizeImageForPrint(imageUrl: string, orientation: PrintOrientati
 
     img.onload = () => {
       try {
-        // Auto-detect orientation from image
-        const imgAspect = img.width / img.height;
-        const isImgLandscape = imgAspect > 1;
+        // FORCE LANDSCAPE ONLY: Always use 1800x1200px (4x6 landscape @ 300 DPI)
+        const targetWidth = 1800;
+        const targetHeight = 1200;
 
-        // Target dimensions in pixels at 300 DPI
-        // Portrait: 4x6 = 1200x1800px
-        // Landscape: 6x4 = 1800x1200px
-        let targetWidth, targetHeight;
-
-        // Auto-rotate: if image is landscape and orientation is portrait, switch to landscape
-        if (orientation === 'portrait' && isImgLandscape) {
-          console.log(`[RESIZE] Auto-rotating to landscape based on image aspect ratio`);
-          targetWidth = 1800;
-          targetHeight = 1200;
-        } else if (orientation === 'landscape' && !isImgLandscape) {
-          console.log(`[RESIZE] Auto-rotating to portrait based on image aspect ratio`);
-          targetWidth = 1200;
-          targetHeight = 1800;
-        } else {
-          // Use specified orientation
-          if (orientation === 'landscape') {
-            targetWidth = 1800;
-            targetHeight = 1200;
-          } else {
-            targetWidth = 1200;
-            targetHeight = 1800;
-          }
-        }
-
-        console.log(`[RESIZE] Target: ${targetWidth}x${targetHeight}px, Original: ${img.width}x${img.height}`);
+        console.log(`[RESIZE] FORCED LANDSCAPE: ${targetWidth}x${targetHeight}px, Original: ${img.width}x${img.height}`);
 
         // Create canvas
         const canvas = document.createElement('canvas');
@@ -183,40 +158,36 @@ async function resizeImageForPrint(imageUrl: string, orientation: PrintOrientati
           throw new Error('Failed to get canvas context');
         }
 
-        // High quality image smoothing
+        // Maximum quality image smoothing
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
 
-        // CONTAIN MODE: Fit image within canvas without cropping
-        // Logic: Portrait → fit based on height, Landscape → fit based on width
+        // COVER MODE: Fill entire canvas, crop excess (object-fit: cover equivalent)
         const targetAspect = targetWidth / targetHeight;
+        const imgAspect = img.width / img.height;
 
         let drawWidth, drawHeight, drawX, drawY;
 
-        if (orientation === 'portrait') {
-          // Portrait: fit based on height
-          drawHeight = targetHeight;
-          drawWidth = targetHeight * imgAspect;
-          drawX = (targetWidth - drawWidth) / 2;
-          drawY = 0;
-        } else {
-          // Landscape: fit based on width
+        if (imgAspect > targetAspect) {
+          // Image is wider than target - scale to fill width, crop height
           drawWidth = targetWidth;
           drawHeight = targetWidth / imgAspect;
           drawX = 0;
           drawY = (targetHeight - drawHeight) / 2;
+        } else {
+          // Image is taller than target - scale to fill height, crop width
+          drawHeight = targetHeight;
+          drawWidth = targetHeight * imgAspect;
+          drawX = (targetWidth - drawWidth) / 2;
+          drawY = 0;
         }
 
-        // Fill white background
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, targetWidth, targetHeight);
-
-        // Draw image centered (contain mode - no crop, no stretch)
+        // Draw image centered and scaled to cover (crop excess, no white space)
         ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 
-        // Export to base64 with high quality
-        const base64 = canvas.toDataURL('image/jpeg', 0.98);
-        console.log(`[RESIZE] Image fitted to ${targetWidth}x${targetHeight}px (contain mode, no crop), original: ${img.width}x${img.height}`);
+        // Export to base64 with MAXIMUM quality (1.0)
+        const base64 = canvas.toDataURL('image/jpeg', 1.0);
+        console.log(`[RESIZE] Image cropped to ${targetWidth}x${targetHeight}px (cover mode, full bleed), original: ${img.width}x${img.height}`);
         resolve(base64);
       } catch (error) {
         console.error('[RESIZE] Error:', error);
@@ -269,29 +240,21 @@ export async function printPhoto(
     ============================================
     */
 
-    console.log(`[PRINT] Resizing image for ${orientation} print: ${imageUrl}`);
+    console.log(`[PRINT] Resizing image for landscape print: ${imageUrl}`);
     const imageData = await resizeImageForPrint(imageUrl, orientation);
 
     /*
     ============================================
     SET UKURAN PRINT (INCHES + DPI)
     ============================================
+    FORCE LANDSCAPE: Always 6x4 inches
     */
 
     const dpi = 300; // DPI for photo quality
-    let dimensions;
-
-    if (orientation === 'landscape') {
-      dimensions = {
-        width: 6,
-        height: 4
-      };
-    } else {
-      dimensions = {
-        width: 4,
-        height: 6
-      };
-    }
+    const dimensions = {
+      width: 6,
+      height: 4
+    };
 
     /*
     ============================================
