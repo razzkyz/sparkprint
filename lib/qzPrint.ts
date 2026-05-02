@@ -167,34 +167,14 @@ async function resizeImageForPrint(imageUrl: string, orientation: PrintOrientati
           throw new Error('Failed to get canvas context');
         }
 
-        // Calculate aspect ratios
-        const targetAspect = targetWidth / targetHeight;
-        const imgAspect = img.width / img.height;
-
-        let drawWidth, drawHeight, drawX, drawY;
-
-        if (imgAspect > targetAspect) {
-          // Image is wider than target - scale to fill width, crop height
-          drawWidth = targetWidth;
-          drawHeight = targetWidth / imgAspect;
-          drawX = 0;
-          drawY = (targetHeight - drawHeight) / 2;
-        } else {
-          // Image is taller than target - scale to fill height, crop width
-          drawHeight = targetHeight;
-          drawWidth = targetHeight * imgAspect;
-          drawX = (targetWidth - drawWidth) / 2;
-          drawY = 0;
-        }
-
-        // Draw image centered and scaled to cover (crop excess)
+        // STRETCH MODE: Force image to fill entire canvas (may distort aspect ratio)
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, targetWidth, targetHeight);
-        ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
         // Export to base64
         const base64 = canvas.toDataURL('image/jpeg', 0.95);
-        console.log(`[RESIZE] Image resized to ${targetWidth}x${targetHeight}px (${orientation}), original: ${img.width}x${img.height}`);
+        console.log(`[RESIZE] Image stretched to ${targetWidth}x${targetHeight}px (${orientation}), original: ${img.width}x${img.height}`);
         resolve(base64);
       } catch (error) {
         console.error('[RESIZE] Error:', error);
