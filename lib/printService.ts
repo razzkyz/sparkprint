@@ -1,5 +1,6 @@
 // lib/printService.ts
 import qz from "qz-tray";
+import { renderImageToCanvas, getPrintDimensions, getQZTrayConfig } from "./canvasPrintRenderer";
 
 let qzConnected = false;
 
@@ -11,6 +12,8 @@ interface PrintOptions {
   size: PrintSize;
   orderId?: string;
 }
+
+const PRINTER_NAME = "DS-RX1";
 
 export const printService = {
   async connect(): Promise<void> {
@@ -34,9 +37,9 @@ export const printService = {
       await new Promise(resolve => setTimeout(resolve, 100));
 
       qzConnected = true;
-      console.log("Connected to QZ Tray successfully");
+      console.log("[PRINT] ✅ Connected to QZ Tray");
     } catch (error) {
-      console.error("Failed to connect to QZ Tray:", error);
+      console.error("[PRINT] ❌ QZ Tray connection failed:", error);
       qzConnected = false;
       throw new Error(
         "QZ Tray connection failed. Please ensure:\n" +
