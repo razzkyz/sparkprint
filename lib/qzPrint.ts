@@ -142,11 +142,20 @@ async function resizeImageForPrint(imageUrl: string, orientation: PrintOrientati
 
     img.onload = () => {
       try {
-        // FORCE LANDSCAPE ONLY: Always use 1800x1200px (4x6 landscape @ 300 DPI)
-        const targetWidth = 1800;
-        const targetHeight = 1200;
+        // Target dimensions in pixels at 300 DPI
+        // Portrait: 4x6 = 1200x1800px
+        // Landscape: 6x4 = 1800x1200px
+        let targetWidth, targetHeight;
 
-        console.log(`[RESIZE] FORCED LANDSCAPE: ${targetWidth}x${targetHeight}px, Original: ${img.width}x${img.height}`);
+        if (orientation === 'landscape') {
+          targetWidth = 1800;
+          targetHeight = 1200;
+        } else {
+          targetWidth = 1200;
+          targetHeight = 1800;
+        }
+
+        console.log(`[RESIZE] Orientation: ${orientation}, Target: ${targetWidth}x${targetHeight}px, Original: ${img.width}x${img.height}`);
 
         // Create canvas
         const canvas = document.createElement('canvas');
@@ -162,32 +171,36 @@ async function resizeImageForPrint(imageUrl: string, orientation: PrintOrientati
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
 
-        // COVER MODE: Fill entire canvas, crop excess (object-fit: cover equivalent)
+        // CONTAIN MODE for both orientations - fit within canvas, add white background
         const targetAspect = targetWidth / targetHeight;
         const imgAspect = img.width / img.height;
 
         let drawWidth, drawHeight, drawX, drawY;
 
         if (imgAspect > targetAspect) {
-          // Image is wider than target - scale to fill width, crop height
+          // Image is wider than target - fit to width
           drawWidth = targetWidth;
           drawHeight = targetWidth / imgAspect;
           drawX = 0;
           drawY = (targetHeight - drawHeight) / 2;
         } else {
-          // Image is taller than target - scale to fill height, crop width
+          // Image is taller than target - fit to height
           drawHeight = targetHeight;
           drawWidth = targetHeight * imgAspect;
           drawX = (targetWidth - drawWidth) / 2;
           drawY = 0;
         }
 
-        // Draw image centered and scaled to cover (crop excess, no white space)
+        // Fill white background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, targetWidth, targetHeight);
+
+        // Draw image centered (contain mode - no crop)
         ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 
         // Export to base64 with MAXIMUM quality (1.0)
         const base64 = canvas.toDataURL('image/jpeg', 1.0);
-        console.log(`[RESIZE] Image cropped to ${targetWidth}x${targetHeight}px (cover mode, full bleed), original: ${img.width}x${img.height}`);
+        console.log(`[RESIZE] Image fitted to ${targetWidth}x${targetHeight}px (contain mode, no crop), original: ${img.width}x${img.height}`);
         resolve(base64);
       } catch (error) {
         console.error('[RESIZE] Error:', error);
@@ -240,21 +253,29 @@ export async function printPhoto(
     ============================================
     */
 
-    console.log(`[PRINT] Resizing image for landscape print: ${imageUrl}`);
+    console.log(`[PRINT] Resizing image for ${orientation} print: ${imageUrl}`);
     const imageData = await resizeImageForPrint(imageUrl, orientation);
 
     /*
     ============================================
     SET UKURAN PRINT (INCHES + DPI)
     ============================================
-    FORCE LANDSCAPE: Always 6x4 inches
     */
 
     const dpi = 300; // DPI for photo quality
-    const dimensions = {
-      width: 6,
-      height: 4
-    };
+    let dimensions;
+
+    if (orientation === 'landscape') {
+      dimensions = {
+        width: 6,
+        height: 4
+      };
+    } else {
+      dimensions = {
+        width: 4,
+        height: 6
+      };
+    }
 
     /*
     ============================================
