@@ -187,14 +187,36 @@ async function resizeImageForPrint(imageUrl: string, orientation: PrintOrientati
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
 
-        // STRETCH MODE: Force image to fill entire canvas (full paper coverage)
+        // CONTAIN MODE: Fit image within canvas without cropping
+        // Logic: Portrait → fit based on height, Landscape → fit based on width
+        const targetAspect = targetWidth / targetHeight;
+
+        let drawWidth, drawHeight, drawX, drawY;
+
+        if (orientation === 'portrait') {
+          // Portrait: fit based on height
+          drawHeight = targetHeight;
+          drawWidth = targetHeight * imgAspect;
+          drawX = (targetWidth - drawWidth) / 2;
+          drawY = 0;
+        } else {
+          // Landscape: fit based on width
+          drawWidth = targetWidth;
+          drawHeight = targetWidth / imgAspect;
+          drawX = 0;
+          drawY = (targetHeight - drawHeight) / 2;
+        }
+
+        // Fill white background
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, targetWidth, targetHeight);
-        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+        // Draw image centered (contain mode - no crop, no stretch)
+        ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 
         // Export to base64 with high quality
         const base64 = canvas.toDataURL('image/jpeg', 0.98);
-        console.log(`[RESIZE] Image stretched to ${targetWidth}x${targetHeight}px (full coverage), original: ${img.width}x${img.height}`);
+        console.log(`[RESIZE] Image fitted to ${targetWidth}x${targetHeight}px (contain mode, no crop), original: ${img.width}x${img.height}`);
         resolve(base64);
       } catch (error) {
         console.error('[RESIZE] Error:', error);
