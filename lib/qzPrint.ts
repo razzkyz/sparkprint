@@ -187,35 +187,14 @@ async function resizeImageForPrint(imageUrl: string, orientation: PrintOrientati
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
 
-        // CONTAIN MODE: Fit image within canvas without cropping
-        const targetAspect = targetWidth / targetHeight;
-
-        let drawWidth, drawHeight, drawX, drawY;
-
-        if (imgAspect > targetAspect) {
-          // Image is wider than target - fit to width
-          drawWidth = targetWidth;
-          drawHeight = targetWidth / imgAspect;
-          drawX = 0;
-          drawY = (targetHeight - drawHeight) / 2;
-        } else {
-          // Image is taller than target - fit to height
-          drawHeight = targetHeight;
-          drawWidth = targetHeight * imgAspect;
-          drawX = (targetWidth - drawWidth) / 2;
-          drawY = 0;
-        }
-
-        // Fill white background
+        // STRETCH MODE: Force image to fill entire canvas (full paper coverage)
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, targetWidth, targetHeight);
-
-        // Draw image centered (contain mode - no crop)
-        ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
         // Export to base64 with high quality
         const base64 = canvas.toDataURL('image/jpeg', 0.98);
-        console.log(`[RESIZE] Image fitted to ${targetWidth}x${targetHeight}px (contain mode), original: ${img.width}x${img.height}`);
+        console.log(`[RESIZE] Image stretched to ${targetWidth}x${targetHeight}px (full coverage), original: ${img.width}x${img.height}`);
         resolve(base64);
       } catch (error) {
         console.error('[RESIZE] Error:', error);
