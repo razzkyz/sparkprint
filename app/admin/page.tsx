@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { connectQZ, checkPrinters, printPhoto, type PrintOrientation } from "@/lib/qzPrint";
+import { connectQZ, checkPrinters, printPhoto, printPhotobooth4Pose, type PrintOrientation, type PaperSize } from "@/lib/qzPrint";
 
 type OrderStatus = "PENDING" | "PAID" | "PRINTED" | "FAILED" | string;
 
@@ -29,13 +29,13 @@ function formatIDR(n: number) {
 function badgeClasses(status: string) {
   switch (status) {
     case "PAID":
-      return "bg-blue-100 text-blue-700 border border-blue-200";
+      return "bg-gradient-to-r from-blue-500 to-blue-600 text-white border border-blue-600 shadow-sm";
     case "PRINTED":
-      return "bg-emerald-100 text-emerald-700 border border-emerald-200";
+      return "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white border border-emerald-600 shadow-sm";
     case "PENDING":
-      return "bg-amber-100 text-amber-700 border border-amber-200";
+      return "bg-gradient-to-r from-amber-400 to-amber-500 text-white border border-amber-500 shadow-sm";
     case "FAILED":
-      return "bg-red-100 text-red-700 border border-red-200";
+      return "bg-gradient-to-r from-red-500 to-red-600 text-white border border-red-600 shadow-sm";
     default:
       return "bg-gray-100 text-gray-600 border border-gray-200";
   }
@@ -84,6 +84,7 @@ export default function AdminPage() {
   const [needsPrint, setNeedsPrint] = useState(false);
   const [sizeFilter, setSizeFilter] = useState<"ALL" | "4x6">("ALL");
   const [printOrientation, setPrintOrientation] = useState<PrintOrientation>("landscape");
+  const [paperSize, setPaperSize] = useState<PaperSize>("4x6");
   const [q, setQ] = useState("");
 
   // Sort
@@ -183,10 +184,16 @@ export default function AdminPage() {
         return;
       }
 
-      // Print each image using QZ Tray with selected orientation
-      for (let i = 0; i < imageUrls.length; i++) {
-        console.log(`[PRINT] Printing image ${i + 1}/${imageUrls.length} (${printOrientation})`);
-        await printPhoto(imageUrls[i], printOrientation, 1);
+      // Use 4-pose renderer for 4 images, otherwise print individually
+      if (imageUrls.length === 4) {
+        console.log(`[PRINT] Using 4-pose photobooth renderer (${paperSize})`);
+        await printPhotobooth4Pose(imageUrls, paperSize, order.qty || 1);
+      } else {
+        // Print each image using QZ Tray with selected orientation
+        for (let i = 0; i < imageUrls.length; i++) {
+          console.log(`[PRINT] Printing image ${i + 1}/${imageUrls.length} (${printOrientation})`);
+          await printPhoto(imageUrls[i], printOrientation, 1);
+        }
       }
 
       // ============= MARK AS PRINTED =============
@@ -337,6 +344,16 @@ export default function AdminPage() {
             >
               <option value="portrait">📷 Portrait (4×6)</option>
               <option value="landscape">📸 Landscape (6×4)</option>
+            </select>
+
+            <select
+              value={paperSize}
+              onChange={(e) => setPaperSize(e.target.value as PaperSize)}
+              className="rounded-lg bg-blue-700 px-4 py-2.5 font-semibold text-white shadow-sm hover:bg-blue-800 active:scale-[0.98] transition-all"
+            >
+              <option value="4x6">📄 4×6 (6×4in)</option>
+              <option value="4R">📄 4R (10.2×15.2cm)</option>
+              <option value="A4">📄 A4 (21×29.7cm)</option>
             </select>
           </div>
         </div>
@@ -492,17 +509,17 @@ export default function AdminPage() {
         </div>
 
         {/* Table */}
-        <div className="mt-4 overflow-hidden rounded-xl bg-white shadow-sm border border-gray-200">
+        <div className="mt-4 overflow-hidden rounded-xl bg-white shadow-lg border border-gray-200">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
+              <thead className="bg-gradient-to-r from-blue-600 to-blue-700 text-white">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">No. Tiket</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Waktu</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Customer</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Detail</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Aksi</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">No. Tiket</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Waktu</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Customer</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Detail</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Aksi</th>
                 </tr>
               </thead>
 

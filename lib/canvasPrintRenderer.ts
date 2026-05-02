@@ -1,18 +1,24 @@
 /**
  * Canvas-based Print Renderer
- * Renders photos to 1800x1200px canvas (300 DPI @ 6x4 inches)
- * Uses COVER MODE: scale to fill entire canvas, no white space
- * 
+ * Renders photos to canvas with various paper sizes
+ *
+ * SUPPORTED PAPER SIZES:
+ * - 4R (10.2 x 15.2 cm) = 4.02 x 5.98 inches ≈ 4x6 @ 300 DPI = 1206x1794px
+ * - A4 (21 x 29.7 cm) = 8.27 x 11.69 inches @ 300 DPI = 2481x3507px
+ * - 4x6 (6 x 4 inches) @ 300 DPI = 1800x1200px
+ *
  * CRITICAL RULES:
- * - Canvas: 1800 x 1200 pixels (landscape 4x6 format)
  * - No white space, no empty areas
  * - Image smoothing: HIGH quality
  * - Export: JPEG quality 1.0 (maximum)
  * - Handles both portrait and landscape images
- * - Auto center crop if needed
+ * - Smart adaptive fit for 4-pose photobooth
  */
 
+export type PaperSize = '4x6' | '4R' | 'A4';
+
 export interface CanvasRenderConfig {
+  paperSize?: PaperSize;
   width?: number;
   height?: number;
   quality?: number;
@@ -20,10 +26,15 @@ export interface CanvasRenderConfig {
   smoothingQuality?: 'low' | 'medium' | 'high';
 }
 
+const PAPER_SIZES: Record<PaperSize, { width: number; height: number; dpi: number }> = {
+  '4x6': { width: 1800, height: 1200, dpi: 300 },    // 6x4 inches @ 300 DPI
+  '4R': { width: 1206, height: 1794, dpi: 300 },    // 4.02x5.98 inches @ 300 DPI
+  'A4': { width: 2481, height: 3507, dpi: 300 },    // 8.27x11.69 inches @ 300 DPI
+};
+
 const DEFAULT_CONFIG: CanvasRenderConfig = {
-  width: 1800,          // 300 DPI * 6 inches
-  height: 1200,         // 300 DPI * 4 inches
-  quality: 1.0,         // Maximum JPEG quality
+  paperSize: '4x6',
+  quality: 1.0,
   smoothing: true,
   smoothingQuality: 'high',
 };
@@ -43,6 +54,17 @@ export async function renderImageToCanvas(
 ): Promise<string> {
   const finalConfig = { ...DEFAULT_CONFIG, ...config };
 
+  // Get dimensions from paper size or custom width/height
+  let canvasWidth, canvasHeight;
+  if (finalConfig.paperSize && !finalConfig.width) {
+    const paper = PAPER_SIZES[finalConfig.paperSize];
+    canvasWidth = paper.width;
+    canvasHeight = paper.height;
+  } else {
+    canvasWidth = finalConfig.width || DEFAULT_CONFIG.paperSize ? PAPER_SIZES[DEFAULT_CONFIG.paperSize!].width : 1800;
+    canvasHeight = finalConfig.height || DEFAULT_CONFIG.paperSize ? PAPER_SIZES[DEFAULT_CONFIG.paperSize!].height : 1200;
+  }
+
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -51,8 +73,8 @@ export async function renderImageToCanvas(
       try {
         // Create canvas with exact print dimensions
         const canvas = document.createElement('canvas');
-        canvas.width = finalConfig.width!;
-        canvas.height = finalConfig.height!;
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
 
         const ctx = canvas.getContext('2d', { alpha: false });
         if (!ctx) {
@@ -64,7 +86,7 @@ export async function renderImageToCanvas(
         ctx.imageSmoothingQuality = finalConfig.smoothingQuality!;
 
         // COVER MODE: Fill entire canvas, crop if needed
-        const canvasAspect = finalConfig.width! / finalConfig.height!;
+        const canvasAspect = canvasWidth / canvasHeight;
         const imageAspect = img.width / img.height;
 
         let drawWidth: number;
@@ -74,16 +96,16 @@ export async function renderImageToCanvas(
 
         if (imageAspect > canvasAspect) {
           // Image is wider than canvas - scale by height, crop left/right
-          drawHeight = finalConfig.height!;
+          drawHeight = canvasHeight;
           drawWidth = drawHeight * imageAspect;
-          drawX = (finalConfig.width! - drawWidth) / 2;
+          drawX = (canvasWidth - drawWidth) / 2;
           drawY = 0;
         } else {
           // Image is taller than canvas - scale by width, crop top/bottom
-          drawWidth = finalConfig.width!;
+          drawWidth = canvasWidth;
           drawHeight = drawWidth / imageAspect;
           drawX = 0;
-          drawY = (finalConfig.height! - drawHeight) / 2;
+          drawY = (canvasHeight - drawHeight) / 2;
         }
 
         // Draw image (cover mode)
@@ -93,7 +115,7 @@ export async function renderImageToCanvas(
         // Export to JPEG with MAXIMUM quality
         const base64 = canvas.toDataURL('image/jpeg', finalConfig.quality!);
 
-        console.log(`[CANVAS] ✅ Rendered ${finalConfig.width}x${finalConfig.height}px (COVER MODE)`);
+        console.log(`[CANVAS] ✅ Rendered ${canvasWidth}x${canvasHeight}px (COVER MODE)`);
         console.log(`[CANVAS]   Original: ${img.width}x${img.height}px`);
         console.log(`[CANVAS]   Scale: ${(drawWidth / img.width * 100).toFixed(1)}%`);
         console.log(`[CANVAS]   Quality: ${(finalConfig.quality! * 100).toFixed(0)}%`);
@@ -162,6 +184,142 @@ export async function verifyImageUrl(url: string): Promise<{ width: number; heig
     img.onerror = () => {
       reject(new Error(`Image verification failed: ${url}`));
     };
+
+    img.src = url;
+  });
+}
+
+/**
+ * Render 4-pose photobooth layout with smart adaptive fit
+ * Layout: 2x2 grid (left-top, right-top, left-bottom, right-bottom)
+ * Canvas: 1800x1200 (landscape 4x6 @ 300 DPI)
+ *
+ * SMART FIT SYSTEM:
+ * - Portrait: contain + adaptive zoom (safe for face/body)
+ * - Landscape: light cover (minimal crop)
+ * - All images: centered, no stretch, no excessive zoom
+ */
+export async function renderPhotobooth4Pose(
+  imageUrls: string[],
+  config: CanvasRenderConfig = {}
+): Promise<string> {
+  const finalConfig = { ...DEFAULT_CONFIG, ...config };
+
+  if (imageUrls.length !== 4) {
+    throw new Error('Photobooth requires exactly 4 images');
+  }
+
+  // Get dimensions from paper size or custom width/height
+  let canvasWidth, canvasHeight;
+  if (finalConfig.paperSize && !finalConfig.width) {
+    const paper = PAPER_SIZES[finalConfig.paperSize];
+    canvasWidth = paper.width;
+    canvasHeight = paper.height;
+  } else {
+    canvasWidth = finalConfig.width || DEFAULT_CONFIG.paperSize ? PAPER_SIZES[DEFAULT_CONFIG.paperSize!].width : 1800;
+    canvasHeight = finalConfig.height || DEFAULT_CONFIG.paperSize ? PAPER_SIZES[DEFAULT_CONFIG.paperSize!].height : 1200;
+  }
+
+  // Create final canvas
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  if (!ctx) {
+    throw new Error('Failed to get canvas context');
+  }
+
+  // Apply HIGH quality image smoothing
+  ctx.imageSmoothingEnabled = finalConfig.smoothing!;
+  ctx.imageSmoothingQuality = finalConfig.smoothingQuality!;
+
+  // Fill white background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+  // Layout: 2x2 grid with NO padding (full edge-to-edge)
+  const photoWidth = canvasWidth / 2;
+  const photoHeight = canvasHeight / 2;
+
+  // Positions for 2x2 grid
+  const positions = [
+    { x: 0, y: 0 },           // left-top
+    { x: photoWidth, y: 0 }, // right-top
+    { x: 0, y: photoHeight }, // left-bottom
+    { x: photoWidth, y: photoHeight }, // right-bottom
+  ];
+
+  // Load and render each image
+  const images = await Promise.all(
+    imageUrls.map(url => loadImage(url))
+  );
+
+  // Render each photo with smart adaptive fit
+  for (let i = 0; i < 4; i++) {
+    const img = images[i];
+    const pos = positions[i];
+
+    // Smart adaptive fit
+    const imgAspect = img.width / img.height;
+    const frameAspect = photoWidth / photoHeight;
+
+    let drawWidth, drawHeight, drawX, drawY;
+
+    if (imgAspect > 1.2) {
+      // Landscape image: use light cover mode (minimal crop)
+      if (imgAspect > frameAspect) {
+        drawHeight = photoHeight;
+        drawWidth = drawHeight * imgAspect;
+        drawX = pos.x - (drawWidth - photoWidth) / 2;
+        drawY = pos.y;
+      } else {
+        drawWidth = photoWidth;
+        drawHeight = drawWidth / imgAspect;
+        drawX = pos.x;
+        drawY = pos.y - (drawHeight - photoHeight) / 2;
+      }
+    } else {
+      // Portrait image: use contain + adaptive zoom (safe for face/body)
+      // Adaptive zoom: scale up slightly to fill frame but keep safe margin
+      const adaptiveZoom = 1.1; // 10% zoom for better fill
+      if (imgAspect > frameAspect) {
+        drawHeight = photoHeight * adaptiveZoom;
+        drawWidth = drawHeight * imgAspect;
+        drawX = pos.x - (drawWidth - photoWidth) / 2;
+        drawY = pos.y - (drawHeight - photoHeight) / 2;
+      } else {
+        drawWidth = photoWidth * adaptiveZoom;
+        drawHeight = drawWidth / imgAspect;
+        drawX = pos.x - (drawWidth - photoWidth) / 2;
+        drawY = pos.y - (drawHeight - photoHeight) / 2;
+      }
+    }
+
+    // Draw image
+    ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+  }
+
+  // Export to JPEG with MAXIMUM quality
+  const base64 = canvas.toDataURL('image/jpeg', finalConfig.quality!);
+
+  console.log(`[PHOTOBOOTH] ✅ Rendered 4-pose layout ${canvasWidth}x${canvasHeight}px`);
+  console.log(`[PHOTOBOOTH]   Layout: 2x2 grid with adaptive fit`);
+  console.log(`[PHOTOBOOTH]   Quality: ${(finalConfig.quality! * 100).toFixed(0)}%`);
+
+  return base64;
+}
+
+/**
+ * Load image from URL
+ */
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
 
     img.src = url;
   });

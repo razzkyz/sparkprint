@@ -28,6 +28,10 @@ CARA PAKAI:
 */
 
 import qz from 'qz-tray';
+import { renderPhotobooth4Pose, type PaperSize as CanvasPaperSize } from './canvasPrintRenderer';
+
+// Re-export PaperSize for convenience
+export type PaperSize = CanvasPaperSize;
 
 /*
 ========================================================
@@ -296,6 +300,129 @@ export async function printPhoto(
     console.log(`✅ PRINT SUCCESS (${orientation})`);
   } catch (error) {
     console.error('❌ PRINT ERROR:', error);
+    throw error;
+  }
+}
+
+/*
+========================================================
+FUNGSI PRINT PHOTOBOOTH 4 POSE
+========================================================
+PARAMETER:
+- imageUrls = array 4 URL gambar
+- paperSize = '4x6' | '4R' | 'A4'
+- copies = jumlah print
+
+CONTOH:
+await printPhotobooth4Pose([url1, url2, url3, url4], '4R', 1);
+
+========================================================
+*/
+
+export async function printPhotobooth4Pose(
+  imageUrls: string[],
+  paperSize: PaperSize = '4x6',
+  copies: number = 1
+) {
+  try {
+    if (imageUrls.length !== 4) {
+      throw new Error('Photobooth requires exactly 4 images');
+    }
+
+    /*
+    ============================================
+    AUTO CONNECT
+    ============================================
+    */
+
+    await connectQZ();
+
+    /*
+    ============================================
+    RENDER 4-POSE LAYOUT WITH SMART ADAPTIVE FIT
+    ============================================
+    */
+
+    console.log(`[PHOTOBOOTH] Rendering 4-pose layout (${paperSize})...`);
+    const imageData = await renderPhotobooth4Pose(imageUrls, { paperSize });
+
+    /*
+    ============================================
+    SET UKURAN PRINT (INCHES + DPI)
+    ============================================
+    */
+
+    const dpi = 300; // DPI for photo quality
+    let dimensions;
+
+    // Convert paper size to inches
+    if (paperSize === '4R') {
+      dimensions = { width: 4.02, height: 5.98 }; // 10.2 x 15.2 cm
+    } else if (paperSize === 'A4') {
+      dimensions = { width: 8.27, height: 11.69 }; // 21 x 29.7 cm
+    } else {
+      dimensions = { width: 6, height: 4 }; // 4x6 inches
+    }
+
+    /*
+    ============================================
+    CONFIG PRINTER
+    ============================================
+    */
+
+    const config = (qz.configs as any).create(PRINTER_NAME, {
+      size: { width: dimensions.width, height: dimensions.height },
+      units: 'in',
+      density: dpi,
+      margins: {
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+      },
+    });
+
+    /*
+    ============================================
+    DATA GAMBAR YANG AKAN DIPRINT
+    ============================================
+    */
+
+    const printData = [
+      {
+        type: 'pixel',
+        format: 'image',
+        data: imageData,
+      },
+    ] as any;
+
+    /*
+    ============================================
+    PRINT
+    ============================================
+    */
+
+    console.log(`[PHOTOBOOTH] Printing 4-pose layout: ${dimensions.width}x${dimensions.height}in at ${dpi} DPI`);
+
+    // Print multiple copies
+    for (let i = 0; i < copies; i++) {
+      try {
+        await (qz as any).print(config, printData);
+        console.log(`[PHOTOBOOTH] Printed copy ${i + 1}/${copies}`);
+
+        // Small delay between copies
+        if (i < copies - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (copyError) {
+        console.error(`[PHOTOBOOTH] Error printing copy ${i + 1}:`, copyError);
+        throw copyError;
+      }
+    }
+
+    console.log(`✅ PHOTOBOOTH PRINT SUCCESS`);
+  } catch (error) {
+    console.error('❌ PHOTOBOOTH PRINT ERROR:', error);
     throw error;
   }
 }

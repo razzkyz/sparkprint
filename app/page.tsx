@@ -9,10 +9,12 @@ declare global {
   }
 }
 
-type SizeKey = "4x6";
+type SizeKey = "4x6" | "4R" | "A4";
 
 const SIZE_OPTIONS: { key: SizeKey; label: string; desc: string; price: number }[] = [
-  { key: "4x6", label: "4×6", desc: "Standard photo", price: 1000 },
+  { key: "4x6", label: "4×6", desc: "Standard photo (6×4in)", price: 1000 },
+  { key: "4R", label: "4R", desc: "Glossy (10.2×15.2cm)", price: 1500 },
+  { key: "A4", label: "A4", desc: "Large (21×29.7cm)", price: 3000 },
 ];
 
 function unitPrice(size: SizeKey) {
