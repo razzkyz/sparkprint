@@ -356,10 +356,12 @@ export async function printPhotobooth4Pose(
     let dimensions;
 
     // Convert paper size to inches
-    if (paperSize === '4R') {
+    if (paperSize === '2R') {
+      dimensions = { width: 2, height: 6 }; // 2x6 inches (strip portrait)
+    } else if (paperSize === '4R') {
       dimensions = { width: 3.94, height: 5.91 }; // 10 x 15 cm
     } else {
-      dimensions = { width: 3.94, height: 5.91 }; // Default to 4R (10x15cm)
+      dimensions = { width: 6, height: 4 }; // 4x6 inches
     }
 
     /*

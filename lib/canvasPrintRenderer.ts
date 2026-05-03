@@ -1,9 +1,11 @@
 /**
  * Canvas-based Print Renderer
- * Renders photos to canvas with 4R paper size
+ * Renders photos to canvas with various paper sizes
  *
- * SUPPORTED PAPER SIZE:
+ * SUPPORTED PAPER SIZES:
+ * - 2R (strip portrait) = 2 x 6 inches @ 300 DPI = 600x1800px
  * - 4R (10 x 15 cm) = 3.94 x 5.91 inches @ 300 DPI = 1182x1773px
+ * - 4x6 (6 x 4 inches) @ 300 DPI = 1800x1200px
  *
  * CRITICAL RULES:
  * - Full image without cropping (contain mode)
@@ -13,7 +15,7 @@
  * - Smart adaptive fit for 4-pose photobooth
  */
 
-export type PaperSize = '4R';
+export type PaperSize = '2R' | '4R' | '4x6';
 
 export interface CanvasRenderConfig {
   paperSize?: PaperSize;
@@ -25,7 +27,9 @@ export interface CanvasRenderConfig {
 }
 
 const PAPER_SIZES: Record<PaperSize, { width: number; height: number; dpi: number }> = {
-  '4R': { width: 1182, height: 1773, dpi: 300 }, // 3.94x5.91 inches @ 300 DPI (10x15cm)
+  '2R': { width: 600, height: 1800, dpi: 300 },    // 2x6 inches @ 300 DPI (strip portrait)
+  '4R': { width: 1182, height: 1773, dpi: 300 },  // 3.94x5.91 inches @ 300 DPI (10x15cm)
+  '4x6': { width: 1800, height: 1200, dpi: 300 }, // 6x4 inches @ 300 DPI
 };
 
 const DEFAULT_CONFIG: CanvasRenderConfig = {

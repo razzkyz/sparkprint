@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendOrderEmail } from "@/lib/email";
 import crypto from "crypto";
 
-type SizeKey = "4R";
+type SizeKey = "2R" | "4R" | "4x6";
 
 function isValidEmail(email: string) {
   if (!email) return true;
@@ -270,8 +270,24 @@ export async function POST(req: Request) {
       }, { status: 413 });
     }
 
-    // Auto-generate photo_sizes array with all 4R
-    const photoSizes: SizeKey[] = Array(photoFiles.length).fill("4R");
+    // Parse per-photo sizes from FormData
+    const photoSizesJson = String(formData.get("photo_sizes") ?? "[]");
+    let photoSizes: SizeKey[] = [];
+    try {
+      photoSizes = JSON.parse(photoSizesJson) as SizeKey[];
+    } catch (e) {
+      console.error("Failed to parse photo_sizes:", e);
+      return NextResponse.json({ error: "Invalid photo_sizes format" }, { status: 400 });
+    }
+
+    if (photoSizes.length !== photoFiles.length) {
+      return NextResponse.json({ error: "Photo sizes count mismatch" }, { status: 400 });
+    }
+
+    // Validate all sizes
+    if (!photoSizes.every(size => ["2R", "4R", "4x6"].includes(size))) {
+      return NextResponse.json({ error: "Invalid size in photo_sizes" }, { status: 400 });
+    }
 
     const queue_number = Number(formData.get("queue_number") ?? 0);
     const customer_name = String(formData.get("customer_name") ?? "").trim().slice(0, 40);
@@ -333,9 +349,13 @@ export async function POST(req: Request) {
 
     console.log("[API] All files uploaded. Total:", imageUrls.length);
 
-    // Calculate amount: photo count * 10000 (4R price)
-    const unitPrice = 10000;
-    const amount = photoFiles.length * unitPrice;
+    // Calculate amount: sum of price per photo size
+    const SIZE_PRICES: Record<SizeKey, number> = {
+      '2R': 5000,
+      '4R': 10000,
+      '4x6': 10000,
+    };
+    const amount = photoSizes.reduce((sum, size) => sum + SIZE_PRICES[size], 0);
 
     // Generate order ID
     const doku_order_id = `SP-${Date.now()}-${Math.random()
@@ -354,7 +374,7 @@ export async function POST(req: Request) {
         image_urls: imageUrls,
         photo_sizes: photoSizes,
         qty: photoFiles.length, // Total number of photos
-        size: "4R", // Always 4R
+        size: photoSizes[0] || "4R", // Use first size (for backward compatibility)
         amount,
         status: "PENDING",
         queue_number,
@@ -378,7 +398,7 @@ export async function POST(req: Request) {
       amount,
       customer_name,
       customer_email,
-      "4R",
+      photoSizes[0] || "4R",
       photoFiles.length
     );
 
@@ -397,7 +417,7 @@ export async function POST(req: Request) {
       const items = photoSizes.map((size, idx) => ({
         name: `Photo ${idx + 1} (${size})`,
         qty: 1,
-        price: unitPrice,
+        price: SIZE_PRICES[size],
       }));
 
       await sendOrderEmail({

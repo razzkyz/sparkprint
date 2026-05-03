@@ -82,7 +82,7 @@ export default function AdminPage() {
   // Filters
   const [status, setStatus] = useState<"ALL" | "PENDING" | "PAID" | "PRINTED" | "FAILED">("PAID");
   const [needsPrint, setNeedsPrint] = useState(false);
-  const [sizeFilter, setSizeFilter] = useState<"ALL" | "4x6">("ALL");
+  const [sizeFilter, setSizeFilter] = useState<"ALL" | "2R" | "4R" | "4x6">("ALL");
   const [printOrientation, setPrintOrientation] = useState<PrintOrientation>("landscape");
   const [q, setQ] = useState("");
 
@@ -183,15 +183,34 @@ export default function AdminPage() {
         return;
       }
 
-      // Use 4-pose renderer for 4 images, otherwise print individually
-      if (imageUrls.length === 4) {
-        console.log(`[PRINT] Using 4-pose photobooth renderer (4R)`);
-        await printPhotobooth4Pose(imageUrls, '4R', order.qty || 1);
-      } else {
-        // Print each image using QZ Tray with selected orientation
-        for (let i = 0; i < imageUrls.length; i++) {
-          console.log(`[PRINT] Printing image ${i + 1}/${imageUrls.length} (${printOrientation})`);
-          await printPhoto(imageUrls[i], printOrientation, 1);
+      // Group images by size for mixed size orders
+      const photoSizes = order.photo_sizes || [];
+      const sizeGroups: Record<string, string[]> = {};
+
+      imageUrls.forEach((url, idx) => {
+        const size = photoSizes[idx] || '4R';
+        if (!sizeGroups[size]) {
+          sizeGroups[size] = [];
+        }
+        sizeGroups[size].push(url);
+      });
+
+      console.log(`[PRINT] Size groups:`, Object.keys(sizeGroups).map(size => `${size}: ${sizeGroups[size].length} photos`));
+
+      // Print each size group separately
+      for (const [size, urls] of Object.entries(sizeGroups)) {
+        console.log(`[PRINT] Printing ${size} group: ${urls.length} photos`);
+
+        // Use 4-pose renderer for 4 images of same size, otherwise print individually
+        if (urls.length === 4) {
+          console.log(`[PRINT] Using 4-pose photobooth renderer (${size})`);
+          await printPhotobooth4Pose(urls, size as any, order.qty || 1);
+        } else {
+          // Print each image using QZ Tray with selected orientation
+          for (let i = 0; i < urls.length; i++) {
+            console.log(`[PRINT] Printing image ${i + 1}/${urls.length} (${size}, ${printOrientation})`);
+            await printPhoto(urls[i], printOrientation, 1);
+          }
         }
       }
 
@@ -429,6 +448,8 @@ export default function AdminPage() {
               className="mt-1.5 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2.5 text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
             >
               <option value="ALL">Semua Ukuran</option>
+              <option value="2R">📷 2R (Strip)</option>
+              <option value="4R">📷 4R (10×15cm)</option>
               <option value="4x6">📷 4×6</option>
             </select>
           </div>
@@ -584,8 +605,8 @@ export default function AdminPage() {
                           🔗 Open ({Array.isArray(o.image_urls) ? o.image_urls.length : (typeof o.image_urls === 'string' ? 1 : 0)})
                         </button>
 
-                        {/* Download button - Only for PAID orders */}
-                        {o.status === "PAID" && o.image_urls && o.image_urls.length > 0 && (
+                        {/* Download button - Always available for testing */}
+                        {o.image_urls && o.image_urls.length > 0 && (
                           <button
                             onClick={async () => {
                               console.log('Starting download for', o.image_urls.length, 'images');
@@ -603,7 +624,7 @@ export default function AdminPage() {
                                   document.body.removeChild(link);
                                   window.URL.revokeObjectURL(url);
                                   console.log(`Downloaded image ${i + 1}`);
-                                  
+
                                   // Delay between downloads
                                   if (i < o.image_urls.length - 1) {
                                     await new Promise(resolve => setTimeout(resolve, 1000));

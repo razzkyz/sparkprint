@@ -9,10 +9,12 @@ declare global {
   }
 }
 
-type SizeKey = "4R";
+type SizeKey = "2R" | "4R" | "4x6";
 
 const SIZE_OPTIONS: { key: SizeKey; label: string; desc: string; price: number }[] = [
-  { key: "4R", label: "4R", desc: "Glossy (10×15cm / 4×6in)", price: 10000 },
+  { key: "2R", label: "2R", desc: "Strip Portrait (2×6in)", price: 5000 },
+  { key: "4R", label: "4R", desc: "Glossy (10×15cm)", price: 10000 },
+  { key: "4x6", label: "4×6", desc: "Standard (6×4in)", price: 10000 },
 ];
 
 function unitPrice(size: SizeKey) {
@@ -39,6 +41,8 @@ export default function KioskPage() {
   // Photo upload (store File objects after compression)
   const [uploadedUrls, setUploadedUrls] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  // Per-photo size selection: one size per photo
+  const [photoSizes, setPhotoSizes] = useState<SizeKey[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [dokuReady, setDokuReady] = useState(false);
@@ -62,10 +66,10 @@ export default function KioskPage() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Calculate total: photo count * 10000 (4R price)
+  // Calculate total: sum of (price per size * 1 per photo)
   const total = useMemo(() => {
-    return uploadedUrls.length * 10000;
-  }, [uploadedUrls.length]);
+    return photoSizes.reduce((sum, size) => sum + unitPrice(size), 0);
+  }, [photoSizes]);
 
   // NEXT_PUBLIC_ prefix required for client-side access in Next.js
   const dokuScriptUrl = process.env.NEXT_PUBLIC_DOKU_IS_PRODUCTION === "true"
@@ -85,6 +89,7 @@ export default function KioskPage() {
     setQueueNumber("");
     setUploadedUrls([]);
     setPreviewUrls([]);
+    setPhotoSizes([]);
     setTimeout(() => fileInputRef.current?.focus(), 50);
   }
 
@@ -189,6 +194,8 @@ export default function KioskPage() {
 
       setUploadedUrls(prev => [...prev, ...compressedFiles]);
       setPreviewUrls(prev => [...prev, ...newPreviews]);
+      // Initialize size for each new photo as 4R
+      setPhotoSizes(prev => [...prev, ...compressedFiles.map(() => "4R" as SizeKey)]);
 
       setStatus({
         kind: "ok",
@@ -207,6 +214,7 @@ export default function KioskPage() {
   function removePhoto(index: number) {
     setUploadedUrls(prev => prev.filter((_, i) => i !== index));
     setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+    setPhotoSizes(prev => prev.filter((_, i) => i !== index));
   }
 
   function closeSuccessAndReset() {
@@ -225,7 +233,8 @@ export default function KioskPage() {
     email.trim().length > 0 &&
     isValidEmail(email.trim()) &&
     isValidQueueNumber &&
-    uploadedUrls.length > 0;
+    uploadedUrls.length > 0 &&
+    photoSizes.length === uploadedUrls.length;
 
   async function pay() {
     if (!name.trim()) {
@@ -245,6 +254,10 @@ export default function KioskPage() {
       fileInputRef.current?.focus();
       return;
     }
+    if (photoSizes.length !== uploadedUrls.length) {
+      setStatus({ kind: "warn", text: "Pilih ukuran untuk semua foto." });
+      return;
+    }
 
     if (!isValidQueueNumber) {
       setStatus({ kind: "warn", text: "Nomor urut harus diisi (1-999)." });
@@ -260,6 +273,8 @@ export default function KioskPage() {
       uploadedUrls.forEach((file) => {
         formData.append("photos", file);
       });
+      // Send per-photo sizes array as JSON string
+      formData.append("photo_sizes", JSON.stringify(photoSizes));
       formData.append("queue_number", queueNum.toString());
       formData.append("customer_name", name.trim());
       formData.append("customer_email", email.trim());
@@ -656,6 +671,44 @@ export default function KioskPage() {
                                   ✕
                                 </button>
                               </div>
+
+                              {/* Size selection for this photo */}
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-gray-700 mb-2">Foto {index + 1} - Ukuran:</div>
+                                <div className="space-y-2">
+                                  {SIZE_OPTIONS.map((opt) => (
+                                    <label
+                                      key={opt.key}
+                                      className={[
+                                        "flex cursor-pointer items-center gap-2 rounded-lg border-2 px-3 py-2 transition-all",
+                                        photoSizes[index] === opt.key
+                                          ? "border-[#ff4b86] bg-pink-50 shadow-sm"
+                                          : "border-gray-200 bg-white hover:border-gray-300",
+                                      ].join(" ")}
+                                    >
+                                      <input
+                                        type="radio"
+                                        name={`size-${index}`}
+                                        value={opt.key}
+                                        checked={photoSizes[index] === opt.key}
+                                        onChange={() => {
+                                          const newSizes = [...photoSizes];
+                                          newSizes[index] = opt.key;
+                                          setPhotoSizes(newSizes);
+                                        }}
+                                        className="h-4 w-4 text-[#ff4b86] accent-[#ff4b86]"
+                                      />
+                                      <div className="flex-1">
+                                        <div className="text-xs font-semibold text-gray-900">{opt.label}</div>
+                                        <div className="text-xs text-gray-500">{opt.desc}</div>
+                                      </div>
+                                      <div className="text-xs font-semibold text-gray-900">
+                                        Rp{formatIDR(opt.price)}
+                                      </div>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -666,13 +719,18 @@ export default function KioskPage() {
               </div>
 
               {/* Payment summary */}
-              {uploadedUrls.length > 0 && (
+              {uploadedUrls.length > 0 && photoSizes.length === uploadedUrls.length && (
                 <div className="mt-6 rounded-2xl bg-gradient-to-r from-pink-50 to-rose-50 border border-pink-200 p-4">
                   <div className="grid gap-3">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-700">Jumlah Foto: <span className="font-medium">{uploadedUrls.length}</span></span>
-                      <span className="font-semibold text-gray-900">4R (10×15cm)</span>
-                    </div>
+                    {photoSizes.map((size, idx) => {
+                      const opt = SIZE_OPTIONS.find(s => s.key === size) || SIZE_OPTIONS[0];
+                      return (
+                        <div key={idx} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-700">Foto {idx + 1}: <span className="font-medium">{opt.label}</span></span>
+                          <span className="font-semibold text-gray-900">Rp{formatIDR(opt.price)}</span>
+                        </div>
+                      );
+                    })}
                     <div className="border-t border-pink-200 pt-3 mt-2 flex items-center justify-between">
                       <span className="font-bold text-gray-900">Total</span>
                       <span className="text-lg font-bold text-[#ff4b86]">Rp{formatIDR(total)}</span>
