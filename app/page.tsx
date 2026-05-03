@@ -9,16 +9,14 @@ declare global {
   }
 }
 
-type SizeKey = "4x6" | "4R" | "A4";
+type SizeKey = "4R";
 
 const SIZE_OPTIONS: { key: SizeKey; label: string; desc: string; price: number }[] = [
-  { key: "4x6", label: "4×6", desc: "Standard photo (6×4in)", price: 1000 },
-  { key: "4R", label: "4R", desc: "Glossy (10.2×15.2cm)", price: 1500 },
-  { key: "A4", label: "A4", desc: "Large (21×29.7cm)", price: 3000 },
+  { key: "4R", label: "4R", desc: "Glossy (10×15cm / 4×6in)", price: 10000 },
 ];
 
 function unitPrice(size: SizeKey) {
-  return SIZE_OPTIONS.find((s) => s.key === size)?.price ?? 1000;
+  return SIZE_OPTIONS.find((s) => s.key === size)?.price ?? 10000;
 }
 
 function formatIDR(n: number) {

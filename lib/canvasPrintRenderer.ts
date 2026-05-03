@@ -1,21 +1,19 @@
 /**
  * Canvas-based Print Renderer
- * Renders photos to canvas with various paper sizes
+ * Renders photos to canvas with 4R paper size
  *
- * SUPPORTED PAPER SIZES:
- * - 4R (10.2 x 15.2 cm) = 4.02 x 5.98 inches ≈ 4x6 @ 300 DPI = 1206x1794px
- * - A4 (21 x 29.7 cm) = 8.27 x 11.69 inches @ 300 DPI = 2481x3507px
- * - 4x6 (6 x 4 inches) @ 300 DPI = 1800x1200px
+ * SUPPORTED PAPER SIZE:
+ * - 4R (10 x 15 cm) = 3.94 x 5.91 inches @ 300 DPI = 1182x1773px
  *
  * CRITICAL RULES:
- * - No white space, no empty areas
+ * - Full image without cropping (contain mode)
  * - Image smoothing: HIGH quality
  * - Export: JPEG quality 1.0 (maximum)
  * - Handles both portrait and landscape images
  * - Smart adaptive fit for 4-pose photobooth
  */
 
-export type PaperSize = '4x6' | '4R' | 'A4';
+export type PaperSize = '4R';
 
 export interface CanvasRenderConfig {
   paperSize?: PaperSize;
@@ -27,26 +25,24 @@ export interface CanvasRenderConfig {
 }
 
 const PAPER_SIZES: Record<PaperSize, { width: number; height: number; dpi: number }> = {
-  '4x6': { width: 1800, height: 1200, dpi: 300 },    // 6x4 inches @ 300 DPI
-  '4R': { width: 1206, height: 1794, dpi: 300 },    // 4.02x5.98 inches @ 300 DPI
-  'A4': { width: 2481, height: 3507, dpi: 300 },    // 8.27x11.69 inches @ 300 DPI
+  '4R': { width: 1182, height: 1773, dpi: 300 }, // 3.94x5.91 inches @ 300 DPI (10x15cm)
 };
 
 const DEFAULT_CONFIG: CanvasRenderConfig = {
-  paperSize: '4x6',
+  paperSize: '4R',
   quality: 1.0,
   smoothing: true,
   smoothingQuality: 'high',
 };
 
 /**
- * Render image to canvas with cover mode (no white space)
- * 
- * COVER MODE LOGIC:
- * - Scale image to fill entire canvas
- * - Auto crop excess parts
- * - Center crop if needed
- * - No stretching, no empty areas
+ * Render image to canvas with contain mode (full image, no crop)
+ *
+ * CONTAIN MODE LOGIC:
+ * - Scale image to fit within canvas
+ * - No cropping - show full image
+ * - Center image with white background if needed
+ * - No stretching
  */
 export async function renderImageToCanvas(
   imageUrl: string,
@@ -85,7 +81,11 @@ export async function renderImageToCanvas(
         ctx.imageSmoothingEnabled = finalConfig.smoothing!;
         ctx.imageSmoothingQuality = finalConfig.smoothingQuality!;
 
-        // COVER MODE: Fill entire canvas, crop if needed
+        // Fill white background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+        // CONTAIN MODE: Scale to fit, no crop
         const canvasAspect = canvasWidth / canvasHeight;
         const imageAspect = img.width / img.height;
 
@@ -95,27 +95,27 @@ export async function renderImageToCanvas(
         let drawY: number;
 
         if (imageAspect > canvasAspect) {
-          // Image is wider than canvas - scale by height, crop left/right
-          drawHeight = canvasHeight;
-          drawWidth = drawHeight * imageAspect;
-          drawX = (canvasWidth - drawWidth) / 2;
-          drawY = 0;
-        } else {
-          // Image is taller than canvas - scale by width, crop top/bottom
+          // Image is wider than canvas - scale by width
           drawWidth = canvasWidth;
           drawHeight = drawWidth / imageAspect;
           drawX = 0;
           drawY = (canvasHeight - drawHeight) / 2;
+        } else {
+          // Image is taller than canvas - scale by height
+          drawHeight = canvasHeight;
+          drawWidth = drawHeight * imageAspect;
+          drawX = (canvasWidth - drawWidth) / 2;
+          drawY = 0;
         }
 
-        // Draw image (cover mode)
-        // This ensures no white space - image fills entire canvas
+        // Draw image (contain mode)
+        // Full image visible, centered with white background if needed
         ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 
         // Export to JPEG with MAXIMUM quality
         const base64 = canvas.toDataURL('image/jpeg', finalConfig.quality!);
 
-        console.log(`[CANVAS] ✅ Rendered ${canvasWidth}x${canvasHeight}px (COVER MODE)`);
+        console.log(`[CANVAS] ✅ Rendered ${canvasWidth}x${canvasHeight}px (CONTAIN MODE)`);
         console.log(`[CANVAS]   Original: ${img.width}x${img.height}px`);
         console.log(`[CANVAS]   Scale: ${(drawWidth / img.width * 100).toFixed(1)}%`);
         console.log(`[CANVAS]   Quality: ${(finalConfig.quality! * 100).toFixed(0)}%`);
@@ -190,14 +190,14 @@ export async function verifyImageUrl(url: string): Promise<{ width: number; heig
 }
 
 /**
- * Render 4-pose photobooth layout with smart adaptive fit
+ * Render 4-pose photobooth layout with contain mode
  * Layout: 2x2 grid (left-top, right-top, left-bottom, right-bottom)
- * Canvas: 1800x1200 (landscape 4x6 @ 300 DPI)
+ * Canvas: varies by paper size @ 300 DPI
  *
- * SMART FIT SYSTEM:
- * - Portrait: contain + adaptive zoom (safe for face/body)
- * - Landscape: light cover (minimal crop)
- * - All images: centered, no stretch, no excessive zoom
+ * CONTAIN MODE:
+ * - All images: full image visible, no crop
+ * - Centered with white background if needed
+ * - No stretch, no excessive zoom
  */
 export async function renderPhotobooth4Pose(
   imageUrls: string[],
@@ -255,48 +255,32 @@ export async function renderPhotobooth4Pose(
     imageUrls.map(url => loadImage(url))
   );
 
-  // Render each photo with smart adaptive fit
+  // Render each photo with contain mode (full image, no crop)
   for (let i = 0; i < 4; i++) {
     const img = images[i];
     const pos = positions[i];
 
-    // Smart adaptive fit
+    // CONTAIN MODE: Scale to fit within frame, no crop
     const imgAspect = img.width / img.height;
     const frameAspect = photoWidth / photoHeight;
 
     let drawWidth, drawHeight, drawX, drawY;
 
-    if (imgAspect > 1.2) {
-      // Landscape image: use light cover mode (minimal crop)
-      if (imgAspect > frameAspect) {
-        drawHeight = photoHeight;
-        drawWidth = drawHeight * imgAspect;
-        drawX = pos.x - (drawWidth - photoWidth) / 2;
-        drawY = pos.y;
-      } else {
-        drawWidth = photoWidth;
-        drawHeight = drawWidth / imgAspect;
-        drawX = pos.x;
-        drawY = pos.y - (drawHeight - photoHeight) / 2;
-      }
+    if (imgAspect > frameAspect) {
+      // Image is wider than frame - scale by width
+      drawWidth = photoWidth;
+      drawHeight = drawWidth / imgAspect;
+      drawX = pos.x;
+      drawY = pos.y + (photoHeight - drawHeight) / 2;
     } else {
-      // Portrait image: use contain + adaptive zoom (safe for face/body)
-      // Adaptive zoom: scale up slightly to fill frame but keep safe margin
-      const adaptiveZoom = 1.1; // 10% zoom for better fill
-      if (imgAspect > frameAspect) {
-        drawHeight = photoHeight * adaptiveZoom;
-        drawWidth = drawHeight * imgAspect;
-        drawX = pos.x - (drawWidth - photoWidth) / 2;
-        drawY = pos.y - (drawHeight - photoHeight) / 2;
-      } else {
-        drawWidth = photoWidth * adaptiveZoom;
-        drawHeight = drawWidth / imgAspect;
-        drawX = pos.x - (drawWidth - photoWidth) / 2;
-        drawY = pos.y - (drawHeight - photoHeight) / 2;
-      }
+      // Image is taller than frame - scale by height
+      drawHeight = photoHeight;
+      drawWidth = drawHeight * imgAspect;
+      drawX = pos.x + (photoWidth - drawWidth) / 2;
+      drawY = pos.y;
     }
 
-    // Draw image
+    // Draw image (contain mode)
     ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
   }
 

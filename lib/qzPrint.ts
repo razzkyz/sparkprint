@@ -321,7 +321,7 @@ await printPhotobooth4Pose([url1, url2, url3, url4], '4R', 1);
 
 export async function printPhotobooth4Pose(
   imageUrls: string[],
-  paperSize: PaperSize = '4x6',
+  paperSize: PaperSize = '4R',
   copies: number = 1
 ) {
   try {
@@ -357,11 +357,9 @@ export async function printPhotobooth4Pose(
 
     // Convert paper size to inches
     if (paperSize === '4R') {
-      dimensions = { width: 4.02, height: 5.98 }; // 10.2 x 15.2 cm
-    } else if (paperSize === 'A4') {
-      dimensions = { width: 8.27, height: 11.69 }; // 21 x 29.7 cm
+      dimensions = { width: 3.94, height: 5.91 }; // 10 x 15 cm
     } else {
-      dimensions = { width: 6, height: 4 }; // 4x6 inches
+      dimensions = { width: 3.94, height: 5.91 }; // Default to 4R (10x15cm)
     }
 
     /*

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { connectQZ, checkPrinters, printPhoto, printPhotobooth4Pose, type PrintOrientation, type PaperSize } from "@/lib/qzPrint";
+import { connectQZ, checkPrinters, printPhoto, printPhotobooth4Pose, type PrintOrientation } from "@/lib/qzPrint";
 
 type OrderStatus = "PENDING" | "PAID" | "PRINTED" | "FAILED" | string;
 
@@ -84,7 +84,6 @@ export default function AdminPage() {
   const [needsPrint, setNeedsPrint] = useState(false);
   const [sizeFilter, setSizeFilter] = useState<"ALL" | "4x6">("ALL");
   const [printOrientation, setPrintOrientation] = useState<PrintOrientation>("landscape");
-  const [paperSize, setPaperSize] = useState<PaperSize>("4x6");
   const [q, setQ] = useState("");
 
   // Sort
@@ -186,8 +185,8 @@ export default function AdminPage() {
 
       // Use 4-pose renderer for 4 images, otherwise print individually
       if (imageUrls.length === 4) {
-        console.log(`[PRINT] Using 4-pose photobooth renderer (${paperSize})`);
-        await printPhotobooth4Pose(imageUrls, paperSize, order.qty || 1);
+        console.log(`[PRINT] Using 4-pose photobooth renderer (4R)`);
+        await printPhotobooth4Pose(imageUrls, '4R', order.qty || 1);
       } else {
         // Print each image using QZ Tray with selected orientation
         for (let i = 0; i < imageUrls.length; i++) {
@@ -344,16 +343,6 @@ export default function AdminPage() {
             >
               <option value="portrait">📷 Portrait (4×6)</option>
               <option value="landscape">📸 Landscape (6×4)</option>
-            </select>
-
-            <select
-              value={paperSize}
-              onChange={(e) => setPaperSize(e.target.value as PaperSize)}
-              className="rounded-lg bg-blue-700 px-4 py-2.5 font-semibold text-white shadow-sm hover:bg-blue-800 active:scale-[0.98] transition-all"
-            >
-              <option value="4x6">📄 4×6 (6×4in)</option>
-              <option value="4R">📄 4R (10.2×15.2cm)</option>
-              <option value="A4">📄 A4 (21×29.7cm)</option>
             </select>
           </div>
         </div>
