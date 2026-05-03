@@ -192,8 +192,8 @@ export default function KioskPage() {
 
       setUploadedUrls(prev => [...prev, ...compressedFiles]);
       setPreviewUrls(prev => [...prev, ...newPreviews]);
-      // Initialize size for each new photo as 4x6
-      setPhotoSizes(prev => [...prev, ...compressedFiles.map(() => "4x6" as SizeKey)]);
+      // Initialize size for each new photo as 4R
+      setPhotoSizes(prev => [...prev, ...compressedFiles.map(() => "4R" as SizeKey)]);
 
       setStatus({
         kind: "ok",
@@ -722,7 +722,7 @@ export default function KioskPage() {
                 <div className="mt-6 rounded-2xl bg-gradient-to-r from-pink-50 to-rose-50 border border-pink-200 p-4">
                   <div className="grid gap-3">
                     {photoSizes.map((size, idx) => {
-                      const opt = SIZE_OPTIONS.find(s => s.key === size)!;
+                      const opt = SIZE_OPTIONS.find(s => s.key === size) || SIZE_OPTIONS[0];
                       return (
                         <div key={idx} className="flex items-center justify-between text-sm">
                           <span className="text-gray-700">Foto {idx + 1}: <span className="font-medium">{opt.label}</span></span>
