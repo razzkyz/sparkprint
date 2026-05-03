@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendOrderEmail } from "@/lib/email";
 import crypto from "crypto";
 
-type SizeKey = "4x6";
+type SizeKey = "4R";
 
 function isValidEmail(email: string) {
   if (!email) return true;
@@ -270,24 +270,8 @@ export async function POST(req: Request) {
       }, { status: 413 });
     }
 
-    // Parse per-photo sizes from FormData
-    const photoSizesJson = String(formData.get("photo_sizes") ?? "[]");
-    let photoSizes: SizeKey[] = [];
-    try {
-      photoSizes = JSON.parse(photoSizesJson) as SizeKey[];
-    } catch (e) {
-      console.error("Failed to parse photo_sizes:", e);
-      return NextResponse.json({ error: "Invalid photo_sizes format" }, { status: 400 });
-    }
-
-    if (photoSizes.length !== photoFiles.length) {
-      return NextResponse.json({ error: "Photo sizes count mismatch" }, { status: 400 });
-    }
-
-    // Validate all sizes
-    if (!photoSizes.every(size => ["4x6"].includes(size))) {
-      return NextResponse.json({ error: "Invalid size in photo_sizes" }, { status: 400 });
-    }
+    // Auto-generate photo_sizes array with all 4R
+    const photoSizes: SizeKey[] = Array(photoFiles.length).fill("4R");
 
     const queue_number = Number(formData.get("queue_number") ?? 0);
     const customer_name = String(formData.get("customer_name") ?? "").trim().slice(0, 40);
@@ -349,9 +333,9 @@ export async function POST(req: Request) {
 
     console.log("[API] All files uploaded. Total:", imageUrls.length);
 
-    // Calculate amount: sum of price per photo size
-    const unitPrice = 10; // Testing price
-    const amount = photoSizes.reduce((sum) => sum + unitPrice, 0);
+    // Calculate amount: photo count * 10000 (4R price)
+    const unitPrice = 10000;
+    const amount = photoFiles.length * unitPrice;
 
     // Generate order ID
     const doku_order_id = `SP-${Date.now()}-${Math.random()
@@ -369,8 +353,8 @@ export async function POST(req: Request) {
         fotoshare_token: "",
         image_urls: imageUrls,
         photo_sizes: photoSizes,
-        qty: photoSizes.length, // Total number of photos
-        size: photoSizes[0] || "4x6", // Default to first size (for backward compatibility)
+        qty: photoFiles.length, // Total number of photos
+        size: "4R", // Always 4R
         amount,
         status: "PENDING",
         queue_number,
@@ -394,8 +378,8 @@ export async function POST(req: Request) {
       amount,
       customer_name,
       customer_email,
-      photoSizes[0] || "4x6",
-      photoSizes.length
+      "4R",
+      photoFiles.length
     );
 
     if (!payment_url) {
