@@ -27,7 +27,8 @@ function formatIDR(n: number) {
 }
 
 function badgeClasses(status: string) {
-  switch (status) {
+  const normalizedStatus = status.trim().toUpperCase();
+  switch (normalizedStatus) {
     case "PAID":
       return "bg-gradient-to-r from-blue-500 to-blue-600 text-white border border-blue-600 shadow-sm";
     case "PRINTED":
@@ -749,10 +750,10 @@ ${j.analysis.recommendation}
                               }
                               console.log('Download complete');
                             }}
-                            disabled={o.status !== "PAID"}
+                            disabled={o.status.trim().toUpperCase() !== "PAID"}
                             className={[
                               "inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
-                              o.status === "PAID"
+                              o.status.trim().toUpperCase() === "PAID"
                                 ? "bg-pink-500 text-white hover:bg-pink-600 shadow-sm"
                                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
                             ].join(" ")}
@@ -763,10 +764,10 @@ ${j.analysis.recommendation}
 
                         <button
                           onClick={() => markPrinted(o.id)}
-                          disabled={printingIds.has(o.id) || o.status !== "PAID"}
+                          disabled={printingIds.has(o.id) || o.status.trim().toUpperCase() !== "PAID"}
                           className={[
                             "inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
-                            printingIds.has(o.id) || o.status !== "PAID"
+                            printingIds.has(o.id) || o.status.trim().toUpperCase() !== "PAID"
                               ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                               : "bg-pink-600 text-white hover:bg-pink-700 shadow-sm",
                           ].join(" ")}
