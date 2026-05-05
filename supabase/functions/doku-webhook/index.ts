@@ -6,7 +6,9 @@ import { crypto } from "https://deno.land/std@0.208.0/crypto/mod.ts";
 // URL: https://hogzjapnkvsihvvbgcdb.supabase.co/functions/v1/doku-webhook
 // ============================================================================
 
-const DOKU_SERVER_KEY = Deno.env.get("DOKU_SERVER_KEY") || "";
+const DOKU_CLIENT_ID = Deno.env.get("DOKU_CLIENT_ID") || "";
+const DOKU_SECRET_KEY = Deno.env.get("DOKU_SECRET_KEY") || Deno.env.get("DOKU_SERVER_KEY") || "";
+const DOKU_WEBHOOK_REQUEST_TARGET = Deno.env.get("DOKU_WEBHOOK_REQUEST_TARGET") || "/functions/v1/doku-webhook";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_ANON_KEY = Deno.env.get("ANON_KEY") || Deno.env.get("SUPABASE_ANON_KEY") || "";
 
@@ -177,18 +179,31 @@ async function handleWebhook(req: Request): Promise<Response> {
     const requestTimestamp =
       req.headers.get("Request-Timestamp") || req.headers.get("request-timestamp") || "";
     const receivedSignature = req.headers.get("Signature") || req.headers.get("signature") || "";
-    const requestTarget = "/functions/v1/doku-webhook";
+    const requestTarget = DOKU_WEBHOOK_REQUEST_TARGET;
 
     console.log("[DOKU Webhook] Received notification:", {
       clientId,
       requestId,
       requestTimestamp,
       signature: receivedSignature.substring(0, 30) + "...",
+      requestTarget,
       rawBodyLength: rawBody.length,
       rawBodyPreview: rawBody.substring(0, 200),
     });
 
-    // ========== STEP 4: VALIDATE TIMESTAMP ==========
+    // ========== STEP 4: VALIDATE CLIENT ID ==========
+    if (DOKU_CLIENT_ID && clientId !== DOKU_CLIENT_ID) {
+      console.warn("[DOKU] ❌ CLIENT ID MISMATCH", {
+        expected: DOKU_CLIENT_ID,
+        received: clientId,
+      });
+      return new Response(JSON.stringify({ error: "invalid_client_id" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // ========== STEP 5: VALIDATE TIMESTAMP ==========
     if (!validateTimestamp(requestTimestamp)) {
       return new Response(JSON.stringify({ error: "invalid_timestamp" }), {
         status: 400,
@@ -196,7 +211,7 @@ async function handleWebhook(req: Request): Promise<Response> {
       });
     }
 
-    // ========== STEP 5: PARSE PAYLOAD ==========
+    // ========== STEP 6: PARSE PAYLOAD ==========
     let payload: any;
     try {
       payload = JSON.parse(rawBody);
@@ -208,16 +223,16 @@ async function handleWebhook(req: Request): Promise<Response> {
       });
     }
 
-    // ========== STEP 6: VERIFY SIGNATURE ==========
+    // ========== STEP 7: VERIFY SIGNATURE ==========
     let isValidSignature = true;
-    if (DOKU_SERVER_KEY && receivedSignature) {
+    if (DOKU_SECRET_KEY && receivedSignature) {
       isValidSignature = await verifyDokuSignature(
         clientId,
         requestId,
         requestTimestamp,
         requestTarget,
         rawBody,
-        DOKU_SERVER_KEY,
+        DOKU_SECRET_KEY,
         receivedSignature
       );
 
@@ -233,11 +248,11 @@ async function handleWebhook(req: Request): Promise<Response> {
       }
 
       console.log("[DOKU] ✅ Signature verified successfully");
-    } else if (!DOKU_SERVER_KEY) {
-      console.warn("[DOKU] ⚠️ DOKU_SERVER_KEY not configured - SKIPPING signature verification");
+    } else if (!DOKU_SECRET_KEY) {
+      console.warn("[DOKU] ⚠️ DOKU_SECRET_KEY not configured - SKIPPING signature verification");
     }
 
-    // ========== STEP 7: DUPLICATE CHECK ==========
+    // ========== STEP 8: DUPLICATE CHECK ==========
     if (processedSignatures.has(requestId)) {
       console.log("[DOKU] Duplicate request (already processed):", requestId);
       return new Response(JSON.stringify({ ok: true, msg: "duplicate_request" }), {
@@ -257,7 +272,7 @@ async function handleWebhook(req: Request): Promise<Response> {
       arr.forEach((sig) => processedSignatures.add(sig));
     }
 
-    // ========== STEP 8: EXTRACT FIELDS ==========
+    // ========== STEP 9: EXTRACT FIELDS ==========
     const invoiceNumber: string = payload?.order?.invoice_number;
     const amount: number = payload?.order?.amount;
     const transactionStatus: string = payload?.transaction?.status; // "SUCCESS" | "FAILED"
@@ -279,7 +294,7 @@ async function handleWebhook(req: Request): Promise<Response> {
     // ========== STEP 9: INITIALIZE SUPABASE CLIENT ==========
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // ========== STEP 10: MAP STATUS & UPDATE DATABASE ==========
+    // ========== STEP 11: MAP STATUS & UPDATE DATABASE ==========
     const isPaid = transactionStatus === "SUCCESS";
     let orderStatus: string;
 
@@ -310,7 +325,8 @@ async function handleWebhook(req: Request): Promise<Response> {
       .from(tableName)
       .select("id, paid_at, status")
       .eq(idColumn, invoiceNumber)
-      .maybeSingle();
+      .limit(1)
+      .single();
 
     if (queryError) {
       console.error("[DOKU] Database query error:", queryError);
@@ -401,7 +417,7 @@ async function handleWebhook(req: Request): Promise<Response> {
       // Don't fail the webhook if logging fails
     }
 
-    // ========== STEP 11: RETURN SUCCESS ==========
+    // ========== STEP 12: RETURN SUCCESS ==========
     // Note: Auto-print is triggered via admin panel or manual API call
     // because Vercel Edge Functions cannot access local TCP printers
     return new Response(JSON.stringify({ 
