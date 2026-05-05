@@ -719,7 +719,7 @@ ${j.analysis.recommendation}
                           🔗 Open ({Array.isArray(o.image_urls) ? o.image_urls.length : (typeof o.image_urls === 'string' ? 1 : 0)})
                         </button>
 
-                        {/* Download button - Always available */}
+                        {/** Download button - Only available when PAID */}
                         {o.image_urls && o.image_urls.length > 0 && (
                           <button
                             onClick={async () => {
@@ -749,26 +749,24 @@ ${j.analysis.recommendation}
                               }
                               console.log('Download complete');
                             }}
-                            className="inline-flex items-center gap-1 rounded-lg bg-pink-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-pink-600 shadow-sm transition-all"
+                            disabled={o.status !== "PAID"}
+                            className={[
+                              "inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
+                              o.status === "PAID"
+                                ? "bg-pink-500 text-white hover:bg-pink-600 shadow-sm"
+                                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                            ].join(" ")}
                           >
                             ⬇️ Download
                           </button>
                         )}
 
-                        {/* Bayar button - Always available */}
-                        <button
-                          onClick={() => markPaid(o.id)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-pink-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-pink-600 shadow-sm transition-all"
-                        >
-                          💰 Bayar
-                        </button>
-
                         <button
                           onClick={() => markPrinted(o.id)}
-                          disabled={printingIds.has(o.id)}
+                          disabled={printingIds.has(o.id) || o.status !== "PAID"}
                           className={[
                             "inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
-                            printingIds.has(o.id)
+                            printingIds.has(o.id) || o.status !== "PAID"
                               ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                               : "bg-pink-600 text-white hover:bg-pink-700 shadow-sm",
                           ].join(" ")}
