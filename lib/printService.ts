@@ -4,7 +4,7 @@ import { renderImageToCanvas, getPrintDimensions, getQZTrayConfig } from "./canv
 
 let qzConnected = false;
 
-type PrintSize = "4x6";
+type PrintSize = "2R" | "4R" | "4x6";
 
 interface PrintOptions {
   imageUrl: string;
@@ -71,12 +71,20 @@ export const printService = {
 
   /**
    * Get dimensions for print size
-   * 4x6 = 4 inches width x 6 inches height
+   * 2R (2x6 inches)  = portrait strip
+   * 4R (10x15 cm)    = 3.94 x 5.91 inches (landscape)
+   * 4x6 (4x6 inches) = standard portrait
    * DPI = 300 for photo quality
    */
   getPrintDimensions(size: PrintSize): { width: number; height: number; dpi: number } {
     const dpi = 300; // DPI for DHS RX 1
-    return { width: 4, height: 6, dpi };
+    const dimensions: Record<PrintSize, { width: number; height: number }> = {
+      '2R': { width: 2, height: 6 },      // 2 x 6 inches (strip portrait)
+      '4R': { width: 3.94, height: 5.91 }, // 10 x 15 cm (landscape)
+      '4x6': { width: 4, height: 6 },    // 4 x 6 inches (portrait)
+    };
+    const dim = dimensions[size] || dimensions['4x6'];
+    return { width: dim.width, height: dim.height, dpi };
   },
 
   /**
@@ -124,6 +132,7 @@ export const printService = {
 
       const printer = printers[0];
       const dimensions = this.getPrintDimensions(size);
+      console.log(`[${orderId || "PRINT"}] Paper size: ${size} (${dimensions.width}\" x ${dimensions.height}\" @ ${dimensions.dpi}DPI)`);
 
       console.log(`[${orderId || "PRINT"}] Using printer: ${printer}, Size: ${size}, Quantity: ${quantity}`);
 

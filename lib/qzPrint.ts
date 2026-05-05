@@ -139,18 +139,28 @@ Mendukung orientation: portrait (4x6) atau landscape (6x4)
 
 export type PrintOrientation = 'portrait' | 'landscape';
 
-async function resizeImageForPrint(imageUrl: string, orientation: PrintOrientation = 'portrait'): Promise<string> {
+async function resizeImageForPrint(imageUrl: string, size: '2R' | '4R' = '4R'): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
 
     img.onload = () => {
       try {
-        // FORCE LANDSCAPE ONLY: Always use 1800x1200px (4x6 landscape @ 300 DPI)
-        const targetWidth = 1800;
-        const targetHeight = 1200;
+        // Set dimensions based on size
+        // 2R = 2x6 inches = 600x1800px @ 300 DPI (portrait/lurus)
+        // 4R = 4x6 inches = 1200x1800px @ 300 DPI (landscape/lebar)
+        let targetWidth: number;
+        let targetHeight: number;
 
-        console.log(`[RESIZE] FORCED LANDSCAPE: ${targetWidth}x${targetHeight}px, Original: ${img.width}x${img.height}`);
+        if (size === '2R') {
+          targetWidth = 600;
+          targetHeight = 1800;
+        } else {
+          targetWidth = 1800;
+          targetHeight = 1200;
+        }
+
+        console.log(`[RESIZE] Size ${size}: ${targetWidth}x${targetHeight}px, Original: ${img.width}x${img.height}`);
 
         // Create canvas
         const canvas = document.createElement('canvas');
@@ -162,16 +172,43 @@ async function resizeImageForPrint(imageUrl: string, orientation: PrintOrientati
           throw new Error('Failed to get canvas context');
         }
 
+        // Fill with white background
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, targetWidth, targetHeight);
+
         // Maximum quality image smoothing
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
 
-        // STRETCH MODE: Force image to fill entire canvas (no white space, may distort aspect ratio)
-        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+        // CONTAIN MODE: Fit image within canvas while maintaining aspect ratio (no cropping)
+        const imgAspect = img.width / img.height;
+        const canvasAspect = targetWidth / targetHeight;
+
+        let drawWidth: number;
+        let drawHeight: number;
+        let drawX: number;
+        let drawY: number;
+
+        if (imgAspect > canvasAspect) {
+          // Image is wider than canvas - fit to width
+          drawWidth = targetWidth;
+          drawHeight = targetWidth / imgAspect;
+          drawX = 0;
+          drawY = (targetHeight - drawHeight) / 2;
+        } else {
+          // Image is taller than canvas - fit to height
+          drawHeight = targetHeight;
+          drawWidth = targetHeight * imgAspect;
+          drawX = (targetWidth - drawWidth) / 2;
+          drawY = 0;
+        }
+
+        console.log(`[RESIZE] Drawing image at ${drawX},${drawY} size ${drawWidth}x${drawHeight}`);
+        ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 
         // Export to base64 with MAXIMUM quality (1.0)
         const base64 = canvas.toDataURL('image/jpeg', 1.0);
-        console.log(`[RESIZE] Image cropped to ${targetWidth}x${targetHeight}px (cover mode, full bleed), original: ${img.width}x${img.height}`);
+        console.log(`[RESIZE] Image resized to ${targetWidth}x${targetHeight}px (contain mode, full image), original: ${img.width}x${img.height}`);
         resolve(base64);
       } catch (error) {
         console.error('[RESIZE] Error:', error);
@@ -204,7 +241,7 @@ await printPhoto(photoUrl, 'portrait', 1);
 
 export async function printPhoto(
   imageUrl: string,
-  orientation: PrintOrientation = 'portrait',
+  size: '2R' | '4R' = '4R',
   copies: number = 1
 ) {
   try {
@@ -220,25 +257,29 @@ export async function printPhoto(
     ============================================
     RESIZE IMAGE TO PROPER DIMENSIONS
     ============================================
-    Resize ke resolusi yang tepat untuk kertas (cover mode)
+    Resize ke resolusi yang tepat untuk kertas (contain mode)
     ============================================
     */
 
-    console.log(`[PRINT] Resizing image for landscape print: ${imageUrl}`);
-    const imageData = await resizeImageForPrint(imageUrl, orientation);
+    console.log(`[PRINT] Resizing image for ${size} print: ${imageUrl}`);
+    const imageData = await resizeImageForPrint(imageUrl, size);
 
     /*
     ============================================
     SET UKURAN PRINT (INCHES + DPI)
     ============================================
-    FORCE LANDSCAPE: Always 6x4 inches
+    2R = 2x6 inches (portrait/lurus)
+    4R = 4x6 inches (landscape/lebar)
     */
 
     const dpi = 300; // DPI for photo quality
-    const dimensions = {
-      width: 6,
-      height: 4
-    };
+    let dimensions;
+
+    if (size === '2R') {
+      dimensions = { width: 2, height: 6 }; // 2x6 inches
+    } else {
+      dimensions = { width: 6, height: 4 }; // 4x6 inches
+    }
 
     /*
     ============================================
@@ -297,7 +338,7 @@ export async function printPhoto(
       }
     }
 
-    console.log(`✅ PRINT SUCCESS (${orientation})`);
+    console.log(`✅ PRINT SUCCESS (${size})`);
   } catch (error) {
     console.error('❌ PRINT ERROR:', error);
     throw error;

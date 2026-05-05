@@ -144,15 +144,34 @@ export async function renderImageToCanvas(
 
 /**
  * Get print dimensions in inches for DHS RX 1
- * 4x6 inches = 1200x1800 pixels @ 300 DPI (landscape)
+ * Supports: 2R (2x6), 4R (3.94x5.91), 4x6
  */
-export function getPrintDimensions() {
+export function getPrintDimensions(size: PaperSize = '4x6') {
+  const dimensionMap: Record<PaperSize, { width: number; height: number; pixelWidth: number; pixelHeight: number }> = {
+    '2R': {
+      width: 2,
+      height: 6,
+      pixelWidth: 600,
+      pixelHeight: 1800,
+    },
+    '4R': {
+      width: 3.94,
+      height: 5.91,
+      pixelWidth: 1182,
+      pixelHeight: 1773,
+    },
+    '4x6': {
+      width: 4,
+      height: 6,
+      pixelWidth: 1200,
+      pixelHeight: 1800,
+    },
+  };
+
+  const dims = dimensionMap[size] || dimensionMap['4x6'];
   return {
-    width: 6,        // inches
-    height: 4,       // inches
+    ...dims,
     dpi: 300,
-    pixelWidth: 1800,
-    pixelHeight: 1200,
   };
 }
 
@@ -160,8 +179,8 @@ export function getPrintDimensions() {
  * Get QZ Tray print config for DS-RX1
  * CRITICAL: Disable printer scaling - use exact canvas size
  */
-export function getQZTrayConfig(printerName: string) {
-  const dims = getPrintDimensions();
+export function getQZTrayConfig(printerName: string, size: PaperSize = '4x6') {
+  const dims = getPrintDimensions(size);
   return {
     size: { width: dims.width, height: dims.height },
     units: 'in',

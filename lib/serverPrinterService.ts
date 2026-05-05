@@ -18,7 +18,7 @@ interface PrinterConfig {
 interface PrintOptions {
   imageUrl: string;
   quantity: number;
-  size: "4x6";
+  size: "2R" | "4R" | "4x6";
   orderId?: string;
 }
 
@@ -335,7 +335,7 @@ export class ServerPrinterService {
    */
   private async convertImageToThermalBitmap(
     imageBuffer: Buffer,
-    size: "4x6"
+    size: "2R" | "4R" | "4x6"
   ): Promise<{ data: Buffer; width: number; height: number }> {
     // Dynamic import sharp (optional dependency)
     let sharp;
@@ -348,17 +348,35 @@ export class ServerPrinterService {
     }
 
     try {
-      // DHS RX 1 specs:
-      // - 4x6: 576px width × 576px height @ 203 DPI
-      const width = 576;
-      const height = 576;
+      // DHS RX 1 specs at 203 DPI:
+      // - 2R (2x6 inches): 406px × 1218px
+      // - 4R (3.94x5.91 inches): ~800px × 1200px  
+      // - 4x6 (4x6 inches): ~816px × 1224px
+      
+      let width: number;
+      let height: number;
+      
+      const dpi = 203; // DHS RX 1 DPI
+      
+      if (size === "2R") {
+        width = Math.round(2 * dpi);      // 406px
+        height = Math.round(6 * dpi);     // 1218px
+      } else if (size === "4R") {
+        width = Math.round(3.94 * dpi);   // ~800px
+        height = Math.round(5.91 * dpi);  // ~1200px
+      } else { // 4x6
+        width = Math.round(4 * dpi);      // ~816px
+        height = Math.round(6 * dpi);     // ~1224px
+      }
+
+      console.log(`[PRINTER] Converting image for ${size} (${width}x${height}px @ ${dpi}DPI)`);
 
       // Step 1: Load image
       const image = sharp(imageBuffer);
       
       // Step 2: Get metadata
       const metadata = await image.metadata();
-      console.log(`[PRINTER] Image size: ${metadata.width}x${metadata.height}`);
+      console.log(`[PRINTER] Original image size: ${metadata.width}x${metadata.height}`);
 
       // Step 3: Resize to printer dimensions (maintain aspect ratio, letterbox)
       const resized = await image
@@ -458,9 +476,23 @@ export class ServerPrinterService {
   /**
    * Fallback bitmap untuk testing (simple striped pattern)
    */
-  private createFallbackBitmap(size: "4x6"): { data: Buffer; width: number; height: number } {
-    const width = 576;
-    const height = 576;
+  private createFallbackBitmap(size: "2R" | "4R" | "4x6"): { data: Buffer; width: number; height: number } {
+    let width: number;
+    let height: number;
+    
+    const dpi = 203; // DHS RX 1 DPI
+    
+    if (size === "2R") {
+      width = Math.round(2 * dpi);      // 406px
+      height = Math.round(6 * dpi);     // 1218px
+    } else if (size === "4R") {
+      width = Math.round(3.94 * dpi);   // ~800px
+      height = Math.round(5.91 * dpi);  // ~1200px
+    } else { // 4x6
+      width = Math.round(4 * dpi);      // ~816px
+      height = Math.round(6 * dpi);     // ~1224px
+    }
+    
     const bytesPerLine = Math.ceil(width / 8);
     const totalBytes = bytesPerLine * height;
 

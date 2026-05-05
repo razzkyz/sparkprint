@@ -8,7 +8,7 @@ import { crypto } from "https://deno.land/std@0.208.0/crypto/mod.ts";
 
 const DOKU_SERVER_KEY = Deno.env.get("DOKU_SERVER_KEY") || "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const SUPABASE_ANON_KEY = Deno.env.get("ANON_KEY") || Deno.env.get("SUPABASE_ANON_KEY") || "";
 
 // Rate limiting: store webhook signatures we've already processed (prevent duplicates)
 const processedSignatures = new Set<string>();
@@ -196,12 +196,48 @@ async function handleWebhook(req: Request): Promise<Response> {
       });
     }
 
-    // ========== STEP 5: VERIFY SIGNATURE ==========
-    // DISABLED FOR DEBUGGING - Always allow through
-    console.log("[DOKU] ⚠️  Signature verification DISABLED for debugging");
-    const isValidSignature = true; // Always true for debugging
+    // ========== STEP 5: PARSE PAYLOAD ==========
+    let payload: any;
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      console.error("[DOKU] Failed to parse JSON:", rawBody);
+      return new Response(JSON.stringify({ error: "invalid_json" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
-    // ========== STEP 6: DUPLICATE CHECK ==========
+    // ========== STEP 6: VERIFY SIGNATURE ==========
+    let isValidSignature = true;
+    if (DOKU_SERVER_KEY && receivedSignature) {
+      isValidSignature = await verifyDokuSignature(
+        clientId,
+        requestId,
+        requestTimestamp,
+        requestTarget,
+        rawBody,
+        DOKU_SERVER_KEY,
+        receivedSignature
+      );
+
+      if (!isValidSignature) {
+        console.warn("[DOKU] ❌ SIGNATURE VERIFICATION FAILED", {
+          invoiceNumber: payload?.order?.invoice_number,
+          receivedSig: receivedSignature.substring(0, 30) + "...",
+        });
+        return new Response(JSON.stringify({ error: "invalid_signature" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      console.log("[DOKU] ✅ Signature verified successfully");
+    } else if (!DOKU_SERVER_KEY) {
+      console.warn("[DOKU] ⚠️ DOKU_SERVER_KEY not configured - SKIPPING signature verification");
+    }
+
+    // ========== STEP 7: DUPLICATE CHECK ==========
     if (processedSignatures.has(requestId)) {
       console.log("[DOKU] Duplicate request (already processed):", requestId);
       return new Response(JSON.stringify({ ok: true, msg: "duplicate_request" }), {
@@ -219,18 +255,6 @@ async function handleWebhook(req: Request): Promise<Response> {
       arr.splice(0, arr.length - 500);
       processedSignatures.clear();
       arr.forEach((sig) => processedSignatures.add(sig));
-    }
-
-    // ========== STEP 7: PARSE PAYLOAD ==========
-    let payload: any;
-    try {
-      payload = JSON.parse(rawBody);
-    } catch {
-      console.error("[DOKU] Failed to parse JSON:", rawBody);
-      return new Response(JSON.stringify({ error: "invalid_json" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
     }
 
     // ========== STEP 8: EXTRACT FIELDS ==========
@@ -253,7 +277,7 @@ async function handleWebhook(req: Request): Promise<Response> {
     });
 
     // ========== STEP 9: INITIALIZE SUPABASE CLIENT ==========
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // ========== STEP 10: MAP STATUS & UPDATE DATABASE ==========
     const isPaid = transactionStatus === "SUCCESS";
@@ -271,11 +295,21 @@ async function handleWebhook(req: Request): Promise<Response> {
       orderStatus = "PENDING";
     }
 
+    // Determine table based on invoice_number prefix
+    let tableName = "print_orders";
+    let idColumn = "doku_order_id";
+    if (!invoiceNumber.startsWith("SP-")) {
+      tableName = "orders"; // Project 1 uses 'orders' table
+      idColumn = "order_number"; // Project 1 uses 'order_number' column
+    }
+
+    console.log(`[DOKU] Using table: ${tableName}, column: ${idColumn} for invoice: ${invoiceNumber}`);
+
     // Find existing order
     const { data: existing, error: queryError } = await supabase
-      .from("print_orders")
+      .from(tableName)
       .select("id, paid_at, status")
-      .eq("doku_order_id", invoiceNumber)
+      .eq(idColumn, invoiceNumber)
       .maybeSingle();
 
     if (queryError) {
@@ -294,6 +328,32 @@ async function handleWebhook(req: Request): Promise<Response> {
       });
     }
 
+    // Check idempotency - prevent duplicate webhook processing
+    const { data: existingLog } = await supabase
+      .from("webhook_logs")
+      .select("id")
+      .eq("order_number", invoiceNumber)
+      .eq("event_type", `doku_status:${orderStatus}`)
+      .eq("success", true)
+      .limit(1);
+
+    if (existingLog && existingLog.length > 0) {
+      console.log(
+        `[DOKU] ℹ️  Webhook already processed for order ${invoiceNumber} with status ${orderStatus}, skipping duplicate update`
+      );
+      return new Response(JSON.stringify({
+        ok: true,
+        msg: "already_processed",
+        idempotent: true,
+        orderId: existing.id,
+        invoiceNumber,
+        currentStatus: existing.status,
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     // Only set paid_at once
     const shouldSetPaidAt = isPaid && !existing.paid_at;
     const updatePayload: Record<string, unknown> = { status: orderStatus };
@@ -304,7 +364,7 @@ async function handleWebhook(req: Request): Promise<Response> {
 
     // Update order
     const { error: updateError } = await supabase
-      .from("print_orders")
+      .from(tableName)
       .update(updatePayload)
       .eq("id", existing.id);
 
@@ -323,6 +383,23 @@ async function handleWebhook(req: Request): Promise<Response> {
       paidAtSet: shouldSetPaidAt,
       timestamp: new Date().toISOString(),
     });
+
+    // Log webhook event to webhook_logs table
+    try {
+      await supabase
+        .from("webhook_logs")
+        .insert({
+          order_number: invoiceNumber,
+          event_type: `doku_status:${orderStatus}`,
+          payload: payload,
+          success: true,
+          processed_at: new Date().toISOString(),
+        });
+      console.log("[DOKU] ✅ Webhook logged to webhook_logs table");
+    } catch (logError) {
+      console.error("[DOKU] Failed to log to webhook_logs:", logError);
+      // Don't fail the webhook if logging fails
+    }
 
     // ========== STEP 11: RETURN SUCCESS ==========
     // Note: Auto-print is triggered via admin panel or manual API call
@@ -350,6 +427,18 @@ async function handleWebhook(req: Request): Promise<Response> {
 // SERVER START
 // ============================================================================
 Deno.serve(async (req: Request) => {
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Client-Id, Request-Id, Request-Timestamp, Signature, Authorization",
+      },
+    });
+  }
+
   // Only accept POST
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "method_not_allowed" }), {
@@ -358,6 +447,6 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Handle the webhook
+  // Handle the webhook - no Supabase auth required, DOKU signature is the security
   return await handleWebhook(req);
 });

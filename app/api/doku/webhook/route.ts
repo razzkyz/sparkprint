@@ -192,11 +192,21 @@ export async function POST(req: Request) {
   }
 
   try {
-    // Find order by doku_order_id (= invoice_number we sent to DOKU)
+    // Determine table based on invoice_number prefix
+    let tableName = "print_orders";
+    let idColumn = "doku_order_id";
+    if (!invoiceNumber.startsWith("SP-")) {
+      tableName = "orders"; // Project 1 uses 'orders' table
+      idColumn = "order_number"; // Project 1 uses 'order_number' column
+    }
+
+    console.log(`[DOKU Webhook] Using table: ${tableName}, column: ${idColumn} for invoice: ${invoiceNumber}`);
+
+    // Find order by appropriate column
     const { data: existing, error: selErr } = await supabaseAdmin
-      .from("print_orders")
-      .select("id, paid_at, status, doku_order_id")
-      .eq("doku_order_id", invoiceNumber)
+      .from(tableName)
+      .select("id, paid_at, status")
+      .eq(idColumn, invoiceNumber)
       .maybeSingle();
 
     if (selErr) {
@@ -213,6 +223,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, msg: "order_not_found" });
     }
 
+    // Check idempotency - prevent duplicate webhook processing
+    const { data: existingLog } = await supabaseAdmin
+      .from("webhook_logs")
+      .select("id")
+      .eq("order_number", invoiceNumber)
+      .eq("event_type", `doku_status:${order_status}`)
+      .eq("success", true)
+      .limit(1);
+
+    if (existingLog && existingLog.length > 0) {
+      console.log(
+        `[DOKU Webhook] ℹ️  Webhook already processed for order ${invoiceNumber} with status ${order_status}, skipping duplicate update`
+      );
+      return NextResponse.json({
+        ok: true,
+        msg: "already_processed",
+        idempotent: true,
+        debug: {
+          orderId: existing.id,
+          invoiceNumber,
+          currentStatus: existing.status,
+          eventType: `doku_status:${order_status}`,
+        },
+      });
+    }
+
     // Check if already processed (prevent duplicate status updates)
     const isAlreadyPaid = existing.status === "PAID" && existing.paid_at;
     if (isAlreadyPaid && transactionStatus === "SUCCESS") {
@@ -221,7 +257,7 @@ export async function POST(req: Request) {
       );
       return NextResponse.json({
         ok: true,
-        msg: "already_processed",
+        msg: "already_paid",
         debug: {
           orderId: existing.id,
           invoiceNumber,
@@ -241,7 +277,7 @@ export async function POST(req: Request) {
 
     // Update order status in database
     const { error: updateErr } = await supabaseAdmin
-      .from("print_orders")
+      .from(tableName)
       .update(updatePayload)
       .eq("id", existing.id);
 
@@ -257,6 +293,23 @@ export async function POST(req: Request) {
       newStatus: order_status,
       paidAt: shouldSetPaidAt ? updatePayload.paid_at : "unchanged",
     });
+
+    // Log webhook event to webhook_logs table
+    try {
+      await supabaseAdmin
+        .from("webhook_logs")
+        .insert({
+          order_number: invoiceNumber,
+          event_type: `doku_status:${order_status}`,
+          payload: payload,
+          success: true,
+          processed_at: new Date().toISOString(),
+        });
+      console.log("[DOKU Webhook] ✅ Webhook logged to webhook_logs table");
+    } catch (logError) {
+      console.error("[DOKU Webhook] Failed to log to webhook_logs:", logError);
+      // Don't fail the webhook if logging fails
+    }
 
     // Trigger auto-print if payment just confirmed as successful
     if (isPaid && shouldSetPaidAt) {
