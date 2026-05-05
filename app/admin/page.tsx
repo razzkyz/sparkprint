@@ -83,7 +83,7 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<"qris" | "cashier">("qris");
 
   // Filters
-  const [status, setStatus] = useState<"ALL" | "PENDING" | "PAID" | "PRINTED" | "FAILED">("PAID");
+  const [status, setStatus] = useState<"ALL" | "PENDING" | "PAID" | "PRINTED" | "FAILED">("ALL");
   const [needsPrint, setNeedsPrint] = useState(false);
   const [sizeFilter, setSizeFilter] = useState<"ALL" | "2R" | "4R" | "4x6">("ALL");
   const [printOrientation, setPrintOrientation] = useState<PrintOrientation>("landscape");
@@ -762,26 +762,6 @@ ${j.analysis.recommendation}
                         >
                           💰 Bayar
                         </button>
-
-                        {/* Test Webhook button - for testing payment flow */}
-                        {o.doku_order_id && o.status === "PENDING" && (
-                          <button
-                            onClick={() => testWebhook(o.doku_order_id!)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-purple-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-600 shadow-sm transition-all"
-                          >
-                            🧪 Test Webhook
-                          </button>
-                        )}
-
-                        {/* Debug Webhook button - check if webhook received from DOKU */}
-                        {o.doku_order_id && (
-                          <button
-                            onClick={() => debugWebhook(o.doku_order_id!)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-gray-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-600 shadow-sm transition-all"
-                          >
-                            🔍 Debug
-                          </button>
-                        )}
 
                         <button
                           onClick={() => markPrinted(o.id)}
