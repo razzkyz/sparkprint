@@ -733,7 +733,9 @@ ${j.analysis.recommendation}
                                   const url = window.URL.createObjectURL(blob);
                                   const link = document.createElement('a');
                                   link.href = url;
-                                  link.download = `Photo No urut - ${o.queue_number || o.id}${i > 0 ? `-${i + 1}` : ''}.jpg`;
+                                  // Get photo size for this image
+                                  const photoSize = (o.photo_sizes && o.photo_sizes[i]) || o.size || '4R';
+                                  link.download = `Photo Urut No ${i + 1} - ${photoSize}.jpg`;
                                   document.body.appendChild(link);
                                   link.click();
                                   document.body.removeChild(link);
