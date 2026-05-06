@@ -351,7 +351,7 @@ export async function POST(req: Request) {
 
     // Calculate amount: sum of price per photo size
     const SIZE_PRICES: Record<SizeKey, number> = {
-      '2R': 10000,
+      '2R': 15000,
       '4R': 15000,
     };
     const amount = photoSizes.reduce((sum, size) => sum + SIZE_PRICES[size], 0);

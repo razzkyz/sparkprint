@@ -12,7 +12,7 @@ declare global {
 type SizeKey = "2R" | "4R";
 
 const SIZE_OPTIONS: { key: SizeKey; label: string; desc: string; price: number }[] = [
-  { key: "2R", label: "2R", desc: "Strip Portrait (2×6in)", price: 10000 },
+  { key: "2R", label: "2R", desc: "Strip Portrait (2×6in)", price: 15000 },
   { key: "4R", label: "4R", desc: "Glossy (10×15cm)", price: 15000 },
 ];
 
