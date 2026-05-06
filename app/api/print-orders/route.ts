@@ -7,7 +7,7 @@ type SizeKey = "2R" | "4R";
 
 function isValidEmail(email: string) {
   if (!email) return true;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  return /^[^\s@]+@[^\s@]+\.com$/i.test(email);
 }
 
 /**

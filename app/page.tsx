@@ -26,7 +26,7 @@ function formatIDR(n: number) {
 
 function isValidEmail(email: string) {
   if (!email) return true;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  return /^[^\s@]+@[^\s@]+\.com$/i.test(email);
 }
 
 const SUCCESS_MODAL_AUTO_CLOSE_MS = 3000;
