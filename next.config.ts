@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '50mb',
     },
   },
+  // Increase API route body size limit for file uploads
+  // This applies to Route Handlers in App Router
+  serverExternalPackages: [],
 };
 
 export default nextConfig;

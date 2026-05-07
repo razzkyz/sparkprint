@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+'use server';
+
+import { revalidatePath } from 'next/cache';
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendOrderEmail } from "@/lib/email";
 import crypto from "crypto";
@@ -12,7 +14,6 @@ function isValidEmail(email: string) {
 
 /**
  * Generate Digest: Base64(SHA256(requestBody))
- * Required component for DOKU Non-SNAP signature
  */
 function generateDigest(requestBody: string): string {
   return crypto
@@ -23,12 +24,6 @@ function generateDigest(requestBody: string): string {
 
 /**
  * Generate DOKU Non-SNAP Signature
- * Format:
- *   rawString = "Client-Id:<v>\nRequest-Id:<v>\nRequest-Timestamp:<v>\nRequest-Target:<path>\nDigest:<digest>"
- *   signature = HMACSHA256(rawString, secretKey) → Base64
- *   header value = "HMACSHA256=" + signature
- *
- * Ref: https://developers.doku.com/get-started-with-doku-api/signature-component/non-snap/signature-component-from-request-header
  */
 function generateDokuSignature(
   clientId: string,
@@ -56,17 +51,6 @@ function generateDokuSignature(
   return `HMACSHA256=${hmac}`;
 }
 
-/**
- * Generate UUID v4
- */
-function generateUUID(): string {
-  return crypto.randomUUID();
-}
-
-/**
- * Create Doku JOKUL Checkout payment transaction via API
- * Ref: https://developers.doku.com/accept-payments/doku-checkout/integration-guide/backend-integration
- */
 async function createDokuTransaction(
   orderId: string,
   amount: number,
@@ -83,7 +67,6 @@ async function createDokuTransaction(
 
     const clientId = process.env.DOKU_CLIENT_KEY!;
     const serverKey = process.env.DOKU_SERVER_KEY;
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://print.sparkstage55.com";
 
     if (!clientId) {
       console.error("[DOKU] DOKU_CLIENT_KEY not configured");
@@ -94,17 +77,10 @@ async function createDokuTransaction(
       return null;
     }
 
-    console.log("[DOKU] Config:", { isProduction, apiUrl, clientId, serverKey: serverKey.substring(0, 10) + "..." });
-
-    // Request metadata
-    // Generate Request-Id with minimum 10 characters (DOKU requirement)
     const requestId = `REQ-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
-    // DOKU requires UTC timestamp in ISO8601 format
     const requestTimestamp = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-    // Request target is the path of the DOKU API endpoint
     const requestTarget = "/checkout/v1/payment";
 
-    // Build request body
     const bodyObj = {
       order: {
         amount: amount,
@@ -138,7 +114,6 @@ async function createDokuTransaction(
 
     const requestBody = JSON.stringify(bodyObj);
 
-    // Generate DOKU Non-SNAP signature
     const signature = generateDokuSignature(
       clientId,
       requestId,
@@ -148,19 +123,6 @@ async function createDokuTransaction(
       serverKey
     );
 
-    console.log("[DOKU] Sending payment request:", {
-      orderId,
-      amount,
-      apiUrl,
-      clientId,
-      requestId,
-      requestIdLength: requestId.length,
-      requestTimestamp,
-      signature: signature.substring(0, 20) + "...",
-      signatureLength: signature.length,
-    });
-
-    // Call DOKU Checkout API
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
@@ -184,9 +146,6 @@ async function createDokuTransaction(
       return null;
     }
 
-    console.log("[DOKU] Full API response:", JSON.stringify(responseData, null, 2));
-
-    // Extract payment URL from response
     const paymentUrl =
       responseData?.response?.payment?.url ||
       responseData?.payment?.url ||
@@ -194,33 +153,10 @@ async function createDokuTransaction(
       responseData?.data?.url ||
       responseData?.url;
 
-    // Also log the payment ID for debugging
-    const paymentId =
-      responseData?.response?.payment?.id ||
-      responseData?.payment?.id ||
-      responseData?.data?.payment?.id ||
-      responseData?.data?.id ||
-      responseData?.id;
-
     if (!paymentUrl) {
-      console.error("[DOKU] No payment URL in response:", {
-        fullResponse: responseData,
-        responsePaths: {
-          "response.payment.url": responseData?.response?.payment?.url,
-          "payment.url": responseData?.payment?.url,
-          "data.payment.url": responseData?.data?.payment?.url,
-          "data.url": responseData?.data?.url,
-          "url": responseData?.url,
-        },
-      });
+      console.error("[DOKU] No payment URL in response:", responseData);
       return null;
     }
-
-    console.log("[DOKU] Payment successfully created:", {
-      paymentUrl,
-      paymentId,
-      paymentUrlLength: paymentUrl.length,
-    });
 
     return paymentUrl;
   } catch (error) {
@@ -229,13 +165,9 @@ async function createDokuTransaction(
   }
 }
 
-export async function POST(req: Request) {
+export async function createPrintOrder(formData: FormData) {
   try {
-    console.log("[API] Received print order request");
-
-    // Parse FormData (compressed files from client)
-    const formData = await req.formData();
-    console.log("[API] FormData keys:", Array.from(formData.keys()));
+    console.log("[Server Action] Received print order request");
 
     const photoFiles: File[] = [];
     formData.forEach((value, key) => {
@@ -244,80 +176,77 @@ export async function POST(req: Request) {
       }
     });
 
-    console.log("[API] Photo files received:", photoFiles.length);
+    console.log("[Server Action] Photo files received:", photoFiles.length);
 
     if (photoFiles.length === 0) {
-      return NextResponse.json({ error: "Photo files are required" }, { status: 400 });
+      return { error: "Photo files are required", status: 400 };
     }
 
-    // Validate file sizes (max 5MB per file, max 20MB total)
-    // Note: Next.js API Route Handlers have default ~4MB body limit
-    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-    const MAX_TOTAL_SIZE = 20 * 1024 * 1024; // 20MB
+    // Validate file sizes (max 8MB per file, max 48MB total for 6 images)
+    const MAX_FILE_SIZE = 8 * 1024 * 1024; // 8MB
+    const MAX_TOTAL_SIZE = 48 * 1024 * 1024; // 48MB
     let totalSize = 0;
 
     for (const photoFile of photoFiles) {
       if (photoFile.size > MAX_FILE_SIZE) {
-        return NextResponse.json({
-          error: `File ${photoFile.name} terlalu besar. Maksimal 5MB per file.`
-        }, { status: 413 });
+        return {
+          error: `File ${photoFile.name} terlalu besar. Maksimal 8MB per file.`,
+          status: 413
+        };
       }
       totalSize += photoFile.size;
     }
 
     if (totalSize > MAX_TOTAL_SIZE) {
-      return NextResponse.json({
-        error: `Total ukuran file terlalu besar. Maksimal 20MB.`
-      }, { status: 413 });
+      return {
+        error: `Total ukuran file terlalu besar. Maksimal 48MB.`,
+        status: 413
+      };
     }
 
-    // Parse per-photo sizes from FormData
     const photoSizesJson = String(formData.get("photo_sizes") ?? "[]");
     let photoSizes: SizeKey[] = [];
     try {
       photoSizes = JSON.parse(photoSizesJson) as SizeKey[];
     } catch (e) {
       console.error("Failed to parse photo_sizes:", e);
-      return NextResponse.json({ error: "Invalid photo_sizes format" }, { status: 400 });
+      return { error: "Invalid photo_sizes format", status: 400 };
     }
 
     if (photoSizes.length !== photoFiles.length) {
-      return NextResponse.json({ error: "Photo sizes count mismatch" }, { status: 400 });
+      return { error: "Photo sizes count mismatch", status: 400 };
     }
 
-    // Validate all sizes
     if (!photoSizes.every(size => ["2R", "4R"].includes(size))) {
-      return NextResponse.json({ error: "Invalid size in photo_sizes" }, { status: 400 });
+      return { error: "Invalid size in photo_sizes", status: 400 };
     }
 
     const queue_number = Number(formData.get("queue_number") ?? 0);
     const customer_name = String(formData.get("customer_name") ?? "").trim().slice(0, 40);
     const customer_email = String(formData.get("customer_email") ?? "").trim().toLowerCase().slice(0, 120);
-    const payment_method = "qris"; // Always use QRIS/E-Wallet via Doku
+    const payment_method = "qris";
 
-    // Validate inputs
     if (!customer_name) {
-      return NextResponse.json({ error: "Customer name is required" }, { status: 400 });
+      return { error: "Customer name is required", status: 400 };
     }
     if (!customer_email || !isValidEmail(customer_email)) {
-      return NextResponse.json({ error: "Valid email is required" }, { status: 400 });
+      return { error: "Valid email is required", status: 400 };
     }
     if (queue_number < 1 || queue_number > 999) {
-      return NextResponse.json({ error: "Queue number must be between 1-999" }, { status: 400 });
+      return { error: "Queue number must be between 1-999", status: 400 };
     }
 
-    // Upload photos to Supabase Storage (using service role key)
     const imageUrls: string[] = [];
     const filePaths: string[] = [];
 
-    console.log("[API] Starting upload of", photoFiles.length, "photos...");
+    console.log("[Server Action] Starting upload of", photoFiles.length, "photos...");
 
     for (const photoFile of photoFiles) {
       const fileExt = photoFile.name.split(".").pop() || "webp";
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
       const filePath = `${fileName}`;
 
-      console.log("[API] Uploading file:", fileName, "Size:", photoFile.size);
+      console.log("[Server Action] Uploading file:", fileName, "Size:", photoFile.size);
 
       const { error: uploadError } = await supabaseAdmin.storage
         .from("photos")
@@ -328,42 +257,37 @@ export async function POST(req: Request) {
 
       if (uploadError) {
         console.error("Upload error:", uploadError);
-        // Cleanup uploaded files if any
         if (filePaths.length > 0) {
           await supabaseAdmin.storage.from("photos").remove(filePaths);
         }
-        return NextResponse.json(
-          { error: `Failed to upload photo: ${uploadError.message}` },
-          { status: 500 }
-        );
+        return {
+          error: `Failed to upload photo: ${uploadError.message}`,
+          status: 500
+        };
       }
 
-      // Get public URL
       const {
         data: { publicUrl },
       } = supabaseAdmin.storage.from("photos").getPublicUrl(filePath);
 
       imageUrls.push(publicUrl);
       filePaths.push(filePath);
-      console.log("[API] File uploaded successfully:", publicUrl);
+      console.log("[Server Action] File uploaded successfully:", publicUrl);
     }
 
-    console.log("[API] All files uploaded. Total:", imageUrls.length);
+    console.log("[Server Action] All files uploaded. Total:", imageUrls.length);
 
-    // Calculate amount: sum of price per photo size
     const SIZE_PRICES: Record<SizeKey, number> = {
       '2R': 15000,
       '4R': 15000,
     };
     const amount = photoSizes.reduce((sum, size) => sum + SIZE_PRICES[size], 0);
 
-    // Generate order ID
     const doku_order_id = `SP-${Date.now()}-${Math.random()
       .toString(36)
       .substring(2, 8)
       .toUpperCase()}`;
 
-    // Create order in database
     const { data: orderData, error: orderError } = await supabaseAdmin
       .from("print_orders")
       .insert({
@@ -373,8 +297,8 @@ export async function POST(req: Request) {
         fotoshare_token: "",
         image_urls: imageUrls,
         photo_sizes: photoSizes,
-        qty: photoFiles.length, // Total number of photos
-        size: photoSizes[0] || "4R", // Use first size (for backward compatibility)
+        qty: photoFiles.length,
+        size: photoSizes[0] || "4R",
         amount,
         status: "PENDING",
         queue_number,
@@ -388,11 +312,10 @@ export async function POST(req: Request) {
     if (orderError) {
       console.error("Order creation error:", orderError);
       await supabaseAdmin.storage.from("photos").remove(filePaths);
-      return NextResponse.json({ error: "Failed to create order" }, { status: 500 });
+      return { error: "Failed to create order", status: 500 };
     }
 
-    // Create payment via DOKU API
-    console.log("[API] Creating Doku payment transaction...");
+    console.log("[Server Action] Creating Doku payment transaction...");
     const payment_url = await createDokuTransaction(
       doku_order_id,
       amount,
@@ -403,16 +326,9 @@ export async function POST(req: Request) {
     );
 
     if (!payment_url) {
-      console.error("[API] Failed to create Doku payment - URL is null");
-    } else {
-      console.log("[API] Doku payment created successfully:", {
-        urlLength: payment_url.length,
-        urlPreview: payment_url.substring(0, 100),
-        urlSuffix: payment_url.substring(payment_url.length - 50),
-      });
+      console.error("[Server Action] Failed to create Doku payment - URL is null");
     }
 
-    // Send confirmation email
     try {
       const items = photoSizes.map((size, idx) => ({
         name: `Photo ${idx + 1} (${size})`,
@@ -433,21 +349,17 @@ export async function POST(req: Request) {
       console.error("Email error:", emailError);
     }
 
-    console.log("[API] Final response being sent:", {
-      order_id: orderData.id,
-      doku_order_id,
-      has_payment_url: !!payment_url,
-      payment_url_length: payment_url?.length,
-    });
+    revalidatePath('/');
 
-    return NextResponse.json({
+    return {
       order_id: orderData.id,
       doku_order_id,
       payment_url,
       image_url: imageUrls[0] || null,
-    });
+      status: 200
+    };
   } catch (error) {
-    console.error("API error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    console.error("Server Action error:", error);
+    return { error: "Internal server error", status: 500 };
   }
 }

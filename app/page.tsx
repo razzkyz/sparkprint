@@ -2,6 +2,7 @@
 
 import Script from "next/script";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPrintOrder } from "@/app/actions/print-orders";
 
 declare global {
   interface Window {
@@ -165,11 +166,11 @@ export default function KioskPage() {
       return;
     }
 
-    // Validate file sizes (max 20MB each to avoid 413 errors)
-    const maxSize = 20 * 1024 * 1024;
+    // Validate file sizes (max 8MB each to support 6 images)
+    const maxSize = 8 * 1024 * 1024;
     const oversizedFiles = files.filter(f => f.size > maxSize);
     if (oversizedFiles.length > 0) {
-      setStatus({ kind: "err", text: "Ukuran file terlalu besar. Maksimal 20MB per file." });
+      setStatus({ kind: "err", text: "Ukuran file terlalu besar. Maksimal 8MB per file." });
       e.target.value = "";
       return;
     }
@@ -279,18 +280,13 @@ export default function KioskPage() {
       formData.append("customer_email", email.trim());
       formData.append("payment_method", "qris");
 
-      const r = await fetch("/api/print-orders", {
-        method: "POST",
-        body: formData,
-      });
+      const result = await createPrintOrder(formData);
 
-      const j = await r.json().catch(() => ({}));
-
-      if (!r.ok) {
-        throw new Error(j?.error ?? `Server error ${r.status}`);
+      if (result.status !== 200 || result.error) {
+        throw new Error(result.error ?? "Server error");
       }
 
-      const { doku_order_id, order_id, payment_url } = j as {
+      const { doku_order_id, order_id, payment_url } = result as {
         payment_url?: string;
         doku_order_id: string;
         order_id: string;
@@ -631,7 +627,7 @@ export default function KioskPage() {
                     <div className="flex flex-col items-center gap-2">
                       <span className="text-2xl">📷</span>
                       <span className="font-medium">Klik untuk upload foto</span>
-                      <span className="text-sm text-gray-500">PNG, JPG, atau WebP (max 10MB per file)</span>
+                      <span className="text-sm text-gray-500">PNG, JPG, atau WebP (max 8MB per file)</span>
                       <span className="text-xs text-gray-400">Bisa pilih multiple file sekaligus</span>
                     </div>
                   </button>
