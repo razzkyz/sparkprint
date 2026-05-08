@@ -116,8 +116,8 @@ export async function renderImageToCanvas(
         // Full image visible, centered with white background if needed
         ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 
-        // Export to JPEG with MAXIMUM quality
-        const base64 = canvas.toDataURL('image/jpeg', finalConfig.quality!);
+        // Export to PNG (lossless HD quality for printing)
+        const base64 = canvas.toDataURL('image/png');
 
         console.log(`[CANVAS] ✅ Rendered ${canvasWidth}x${canvasHeight}px (CONTAIN MODE)`);
         console.log(`[CANVAS]   Original: ${img.width}x${img.height}px`);

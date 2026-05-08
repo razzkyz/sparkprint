@@ -150,9 +150,9 @@ export default function KioskPage() {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    // Allow up to 5 photos
-    if (files.length > 5) {
-      setStatus({ kind: "err", text: "Maksimal 5 foto yang boleh diupload sekaligus. Silakan pilih maksimal 5 foto." });
+    // Allow up to 3 photos (prevent 413 payload too large error)
+    if (files.length > 3) {
+      setStatus({ kind: "err", text: "Maksimal 3 foto per upload. Silakan pilih maksimal 3 foto untuk menghindari error file besar." });
       e.target.value = "";
       return;
     }
