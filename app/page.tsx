@@ -136,7 +136,7 @@ export default function KioskPage() {
               else reject(new Error("Compression failed"));
             },
             "image/webp",
-            0.85
+            0.6
           );
         };
         img.onerror = () => reject(new Error("Failed to load image"));
