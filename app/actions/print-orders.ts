@@ -182,15 +182,19 @@ export async function createPrintOrder(formData: FormData) {
       return { error: "Photo files are required", status: 400 };
     }
 
-    // Validate file sizes (max 8MB per file, max 48MB total for 6 images)
-    const MAX_FILE_SIZE = 8 * 1024 * 1024; // 8MB
-    const MAX_TOTAL_SIZE = 48 * 1024 * 1024; // 48MB
+    if (photoFiles.length > 5) {
+      return { error: "Maksimal 5 gambar", status: 400 };
+    }
+
+    // Validate file sizes (max 5MB per file, max 25MB total for 5 images)
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+    const MAX_TOTAL_SIZE = 25 * 1024 * 1024; // 25MB
     let totalSize = 0;
 
     for (const photoFile of photoFiles) {
       if (photoFile.size > MAX_FILE_SIZE) {
         return {
-          error: `File ${photoFile.name} terlalu besar. Maksimal 8MB per file.`,
+          error: `File ${photoFile.name} terlalu besar. Maksimal 5MB per file.`,
           status: 413
         };
       }
@@ -199,7 +203,7 @@ export async function createPrintOrder(formData: FormData) {
 
     if (totalSize > MAX_TOTAL_SIZE) {
       return {
-        error: `Total ukuran file terlalu besar. Maksimal 48MB.`,
+        error: `Total ukuran file terlalu besar. Maksimal 25MB.`,
         status: 413
       };
     }

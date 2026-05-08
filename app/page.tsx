@@ -105,8 +105,8 @@ export default function KioskPage() {
           const canvas = document.createElement("canvas");
           let { width, height } = img;
 
-          // Landscape dimensions for print consistency (1800x1200 @ 300 DPI)
-          const maxWidth = 1800;
+          // Landscape dimensions for print consistency (1600x1200 @ 300 DPI for HD)
+          const maxWidth = 1600;
           const maxHeight = 1200;
 
           if (width > height) {
@@ -136,7 +136,7 @@ export default function KioskPage() {
               else reject(new Error("Compression failed"));
             },
             "image/webp",
-            0.6
+            0.5
           );
         };
         img.onerror = () => reject(new Error("Failed to load image"));
@@ -150,9 +150,9 @@ export default function KioskPage() {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    // Allow up to 5 photos
+    // Max 5 photos for HD quality
     if (files.length > 5) {
-      setStatus({ kind: "err", text: "Maksimal 5 foto yang boleh diupload sekaligus. Silakan pilih maksimal 5 foto." });
+      setStatus({ kind: "err", text: "Maksimal 5 foto." });
       e.target.value = "";
       return;
     }
@@ -166,11 +166,11 @@ export default function KioskPage() {
       return;
     }
 
-    // Validate file sizes (max 8MB each to support 6 images)
-    const maxSize = 8 * 1024 * 1024;
+    // Validate file sizes (max 5MB each for 5 images)
+    const maxSize = 5 * 1024 * 1024;
     const oversizedFiles = files.filter(f => f.size > maxSize);
     if (oversizedFiles.length > 0) {
-      setStatus({ kind: "err", text: "Ukuran file terlalu besar. Maksimal 8MB per file." });
+      setStatus({ kind: "err", text: "Ukuran file terlalu besar. Maksimal 5MB per file." });
       e.target.value = "";
       return;
     }
@@ -627,8 +627,8 @@ export default function KioskPage() {
                     <div className="flex flex-col items-center gap-2">
                       <span className="text-2xl">📷</span>
                       <span className="font-medium">Klik untuk upload foto</span>
-                      <span className="text-sm text-gray-500">PNG, JPG, atau WebP (max 8MB per file)</span>
-                      <span className="text-xs text-gray-400">Bisa pilih multiple file sekaligus</span>
+                      <span className="text-sm text-gray-500">PNG, JPG, atau WebP (max 5MB per file, max 5 foto)</span>
+                      <span className="text-xs text-gray-400">Kompresi otomatis untuk kualitas HD</span>
                     </div>
                   </button>
 
