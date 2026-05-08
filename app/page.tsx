@@ -136,7 +136,7 @@ export default function KioskPage() {
               else reject(new Error("Compression failed"));
             },
             "image/webp",
-            0.9
+            0.6
           );
         };
         img.onerror = () => reject(new Error("Failed to load image"));
@@ -283,6 +283,10 @@ export default function KioskPage() {
       const result = await createPrintOrder(formData);
 
       if (result.status !== 200 || result.error) {
+        // Better error messages for common issues
+        if (result.status === 413) {
+          throw new Error("Error 413: File terlalu besar. Jumlah gambar atau ukuran file melebihi batas. Coba upload dengan jumlah foto lebih sedikit.");
+        }
         throw new Error(result.error ?? "Server error");
       }
 
