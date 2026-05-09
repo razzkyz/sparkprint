@@ -105,9 +105,9 @@ export default function KioskPage() {
           const canvas = document.createElement("canvas");
           let { width, height } = img;
 
-          // Landscape dimensions for print consistency (1800x1200 @ 300 DPI)
-          const maxWidth = 1800;
-          const maxHeight = 1200;
+          // Landscape dimensions for HD print (2400x1600 @ 300 DPI)
+          const maxWidth = 2400;
+          const maxHeight = 1600;
 
           if (width > height) {
             if (width > maxWidth) {
@@ -136,7 +136,7 @@ export default function KioskPage() {
               else reject(new Error("Compression failed"));
             },
             "image/webp",
-            0.6
+            0.85
           );
         };
         img.onerror = () => reject(new Error("Failed to load image"));
