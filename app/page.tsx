@@ -136,7 +136,7 @@ export default function KioskPage() {
               else reject(new Error("Compression failed"));
             },
             "image/webp",
-            0.85
+            0.75
           );
         };
         img.onerror = () => reject(new Error("Failed to load image"));
@@ -166,11 +166,11 @@ export default function KioskPage() {
       return;
     }
 
-    // Validate file sizes (max 8MB each to support 6 images)
-    const maxSize = 8 * 1024 * 1024;
+    // Validate file sizes (max 6MB each for 5 images)
+    const maxSize = 6 * 1024 * 1024;
     const oversizedFiles = files.filter(f => f.size > maxSize);
     if (oversizedFiles.length > 0) {
-      setStatus({ kind: "err", text: "Ukuran file terlalu besar. Maksimal 8MB per file." });
+      setStatus({ kind: "err", text: "Ukuran file terlalu besar. Maksimal 6MB per file." });
       e.target.value = "";
       return;
     }
@@ -631,7 +631,7 @@ export default function KioskPage() {
                     <div className="flex flex-col items-center gap-2">
                       <span className="text-2xl">📷</span>
                       <span className="font-medium">Klik untuk upload foto</span>
-                      <span className="text-sm text-gray-500">PNG, JPG, atau WebP (max 8MB per file)</span>
+                      <span className="text-sm text-gray-500">PNG, JPG, atau WebP (max 6MB per file, max 5 foto)</span>
                       <span className="text-xs text-gray-400">Bisa pilih multiple file sekaligus</span>
                     </div>
                   </button>
