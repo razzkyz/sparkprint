@@ -93,8 +93,18 @@ export default function KioskPage() {
     setTimeout(() => fileInputRef.current?.focus(), 50);
   }
 
-  // Compress image to reduce file size (landscape mode for print consistency)
-  async function compressImage(file: File): Promise<Blob> {
+  // Compress image to reduce file size, support 2R/4R, max 6MB, avoid blur
+  async function compressImage(file: File, sizeKey: '2R' | '4R' = '4R'): Promise<Blob> {
+    // 2R: 750x1050 px, 4R: 2400x1600 landscape px (300 DPI)
+    const sizeMap = {
+      '2R': { width: 750, height: 1050 },
+      '4R': { width: 2400, height: 1600 },
+    };
+    const { width: targetW, height: targetH } = sizeMap[sizeKey] || sizeMap['4R'];
+    const maxSize = 6 * 1024 * 1024; // 6MB
+    let quality = 0.92; // Start high, lower if needed
+    let lastBlob: Blob | null = null;
+
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
@@ -103,41 +113,41 @@ export default function KioskPage() {
         img.src = event.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement("canvas");
-          let { width, height } = img;
-
-          // Landscape dimensions for HD print (2400x1600 @ 300 DPI)
-          const maxWidth = 2400;
-          const maxHeight = 1600;
-
-          if (width > height) {
-            if (width > maxWidth) {
-              height = (maxWidth / width) * height;
-              width = maxWidth;
-            }
-          } else {
-            if (height > maxHeight) {
-              width = (maxHeight / height) * width;
-              height = maxHeight;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
+          // Always fit to target size, keep aspect ratio, no upscaling
+          let w = img.width;
+          let h = img.height;
+          let scale = Math.min(targetW / w, targetH / h, 1); // never upscale
+          w = Math.round(w * scale);
+          h = Math.round(h * scale);
+          canvas.width = w;
+          canvas.height = h;
           const ctx = canvas.getContext("2d");
           if (!ctx) {
             reject(new Error("Failed to get canvas context"));
             return;
           }
+          ctx.drawImage(img, 0, 0, w, h);
 
-          ctx.drawImage(img, 0, 0, width, height);
-          canvas.toBlob(
-            (blob) => {
-              if (blob) resolve(blob);
-              else reject(new Error("Compression failed"));
-            },
-            "image/webp",
-            0.75
-          );
+          function tryCompress(currentQuality: number) {
+            canvas.toBlob(
+              (blob) => {
+                if (!blob) {
+                  reject(new Error("Compression failed"));
+                  return;
+                }
+                lastBlob = blob;
+                if (blob.size <= maxSize || currentQuality < 0.5) {
+                  resolve(blob);
+                } else {
+                  // Reduce quality and try again
+                  tryCompress(currentQuality - 0.07);
+                }
+              },
+              "image/webp",
+              currentQuality
+            );
+          }
+          tryCompress(quality);
         };
         img.onerror = () => reject(new Error("Failed to load image"));
       };
@@ -178,8 +188,14 @@ export default function KioskPage() {
     setStatus({ kind: "info", text: `Mengkompresi foto (${files.length})...` });
 
     try {
-      // Compress semua files
-      const compressedBlobs = await Promise.all(files.map(f => compressImage(f)));
+      // Use selected size for each photo, default to 4R if not set
+      const sizeForNewPhotos = (idx: number) => {
+        // If user already selected sizes, use next; else default to 4R
+        return photoSizes[idx] || '4R';
+      };
+      const compressedBlobs = await Promise.all(
+        files.map((f, idx) => compressImage(f, sizeForNewPhotos(idx) as '2R' | '4R'))
+      );
 
       // Create previews using object URLs (lightweight)
       const newPreviews = compressedBlobs.map(blob => URL.createObjectURL(blob));
