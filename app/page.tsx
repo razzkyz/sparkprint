@@ -190,9 +190,9 @@ export default function KioskPage() {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    // Allow up to 10 photos per upload
-    if (files.length > 10) {
-      setStatus({ kind: "err", text: "Maksimal 10 foto per upload. Silakan pilih maksimal 10 foto." });
+    // Allow up to 3 photos per order (quality over quantity for high-res print)
+    if (files.length > 3) {
+      setStatus({ kind: "err", text: "Maksimal 3 foto per pesanan. Silakan pilih maksimal 3 foto." });
       e.target.value = "";
       return;
     }
@@ -733,7 +733,7 @@ export default function KioskPage() {
                     <div className="flex flex-col items-center gap-2">
                       <span className="text-2xl">📷</span>
                       <span className="font-medium">Klik untuk upload foto</span>
-                      <span className="text-sm text-gray-500">PNG, JPG, atau WebP (max 10MB per file, max 10 foto)</span>
+                      <span className="text-sm text-gray-500">PNG, JPG, atau WebP (max 10MB per file, maks 3 foto)</span>
                       <span className="text-xs text-gray-400">Bisa pilih multiple file sekaligus</span>
                     </div>
                   </button>
