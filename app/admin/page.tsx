@@ -204,13 +204,13 @@ export default function AdminPage() {
       for (const [size, urls] of Object.entries(sizeGroups)) {
         console.log(`[PRINT] Printing ${size} group: ${urls.length} photos`);
 
-        // Map size to orientation
+        // Map size to orientation for printPhoto
         const orientation: PrintOrientation = size === '2R' ? 'portrait' : 'landscape';
 
         // Use 4-pose renderer for 4 images of same size, otherwise print individually
         if (urls.length === 4) {
           console.log(`[PRINT] Using 4-pose photobooth renderer (${size})`);
-          await printPhotobooth4Pose(urls, orientation, order.qty || 1);
+          await printPhotobooth4Pose(urls, size as any, order.qty || 1);
         } else {
           // Print each image using QZ Tray with size-based orientation
           for (let i = 0; i < urls.length; i++) {
