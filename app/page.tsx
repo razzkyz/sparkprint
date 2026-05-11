@@ -547,8 +547,14 @@ export default function KioskPage() {
       <Script
         src={dokuScriptUrl}
         strategy="afterInteractive"
-        onLoad={() => setDokuReady(true)}
-        onError={() => setDokuReady(false)}
+        onLoad={() => {
+          console.log("[DOKU] Script loaded successfully");
+          setDokuReady(true);
+        }}
+        onError={(e) => {
+          console.error("[DOKU] Script failed to load:", e);
+          setDokuReady(false);
+        }}
       />
 
       {/* Success Modal */}
