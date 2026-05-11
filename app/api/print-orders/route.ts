@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendOrderEmail } from "@/lib/email";
 import crypto from "crypto";
 
-type SizeKey = "2R" | "4R" | "4x6";
+type SizeKey = "2R" | "4R";
 
 function isValidEmail(email: string) {
   if (!email) return true;
@@ -351,9 +351,8 @@ export async function POST(req: Request) {
 
     // Calculate amount: sum of price per photo size
     const SIZE_PRICES: Record<SizeKey, number> = {
-      '2R': 5000,
-      '4R': 10000,
-      '4x6': 10000,
+      '2R': 15000,
+      '4R': 15000,
     };
     const amount = photoSizes.reduce((sum, size) => sum + SIZE_PRICES[size], 0);
 
