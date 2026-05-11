@@ -7,6 +7,7 @@ type OrderStatus = "PENDING" | "PAID" | "PRINTED" | "FAILED" | string;
 
 type Order = {
   id: string;
+  doku_order_id: string | null;
   queue_number: number | null;
   customer_name: string | null;
   customer_email: string | null;
@@ -18,7 +19,6 @@ type Order = {
   status: OrderStatus;
   created_at: string;
   paid_at: string | null;
-  doku_order_id: string | null;
   payment_method?: string | null;
 };
 
@@ -27,7 +27,8 @@ function formatIDR(n: number) {
 }
 
 function badgeClasses(status: string) {
-  switch (status) {
+  const normalizedStatus = status.trim().toUpperCase();
+  switch (normalizedStatus) {
     case "PAID":
       return "bg-gradient-to-r from-blue-500 to-blue-600 text-white border border-blue-600 shadow-sm";
     case "PRINTED":
@@ -42,11 +43,11 @@ function badgeClasses(status: string) {
 }
 
 export default function AdminPage() {
-  const [password, setPassword] = useState("");
+  const [password] = useState("password123"); // Auto-fill password
   const [qrisOrders, setQrisOrders] = useState<Order[]>([]);
   const [cashierOrders, setCashierOrders] = useState<Order[]>([]);
   const [msg, setMsg] = useState("");
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh] = useState(true); // Always on
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewImages, setPreviewImages] = useState<string[]>([]);
   const [qzConnected, setQzConnected] = useState(false);
@@ -76,11 +77,14 @@ export default function AdminPage() {
   // Print confirmation modal
   const [printConfirm, setPrintConfirm] = useState<Order | null>(null);
 
+  // Auto-print enabled
+  const [autoPrintEnabled, setAutoPrintEnabled] = useState(true);
+
   // Tab - temporarily disable cashier
   const [activeTab, setActiveTab] = useState<"qris" | "cashier">("qris");
 
   // Filters
-  const [status, setStatus] = useState<"ALL" | "PENDING" | "PAID" | "PRINTED" | "FAILED">("PAID");
+  const [status, setStatus] = useState<"ALL" | "PENDING" | "PAID" | "PRINTED" | "FAILED">("ALL");
   const [needsPrint, setNeedsPrint] = useState(false);
   const [sizeFilter, setSizeFilter] = useState<"ALL" | "2R" | "4R" | "4x6">("ALL");
   const [printOrientation, setPrintOrientation] = useState<PrintOrientation>("landscape");
@@ -96,8 +100,6 @@ export default function AdminPage() {
       setMsg("Isi password operator dulu.");
       return;
     }
-
-    setMsg("loading...");
 
     // Load QRIS orders (payment_method = 'qris' or null)
     const qrisParams = new URLSearchParams();
@@ -150,13 +152,14 @@ export default function AdminPage() {
 
   async function confirmedMarkPrinted() {
     if (!printConfirm) return;
+    await confirmedMarkPrintedWithOrder(printConfirm);
+  }
 
-    const id = printConfirm.id;
+  async function confirmedMarkPrintedWithOrder(order: Order) {
+    const id = order.id;
     setPrintingIds(prev => new Set(prev).add(id));
 
     try {
-      const order = printConfirm;
-
       // Handle image_urls - ensure it's an array
       let imageUrls: string[] = [];
       if (Array.isArray(order.image_urls)) {
@@ -166,7 +169,7 @@ export default function AdminPage() {
       }
 
       if (imageUrls.length === 0) {
-        alert("Order tidak memiliki gambar");
+        console.error(`[PRINT] Order ${id} has no images`);
         return;
       }
 
@@ -179,7 +182,7 @@ export default function AdminPage() {
 
       // Check QZ connection
       if (!qzConnected) {
-        alert("QZ Tray not connected. Please click 'Connect QZ' first.");
+        console.error(`[PRINT] QZ Tray not connected for order ${id}`);
         return;
       }
 
@@ -206,10 +209,10 @@ export default function AdminPage() {
           console.log(`[PRINT] Using 4-pose photobooth renderer (${size})`);
           await printPhotobooth4Pose(urls, size as any, order.qty || 1);
         } else {
-          // Print each image using QZ Tray with selected orientation
+          // Print each image using QZ Tray with size-based orientation
           for (let i = 0; i < urls.length; i++) {
-            console.log(`[PRINT] Printing image ${i + 1}/${urls.length} (${size}, ${printOrientation})`);
-            await printPhoto(urls[i], printOrientation, 1);
+            console.log(`[PRINT] Printing image ${i + 1}/${urls.length} (${size})`);
+            await printPhoto(urls[i], size as '2R' | '4R', 1);
           }
         }
       }
@@ -225,20 +228,20 @@ export default function AdminPage() {
       const markJson = await markRes.json().catch(() => ({}));
       if (!markRes.ok) {
         console.error(`[PRINT] Failed to mark printed:`, markJson);
-        alert(`❌ Mark printed error: ${markJson?.error ?? `HTTP ${markRes.status}`}`);
         return;
       }
 
       console.log(`[PRINT] ✅ Order marked as printed:`, markJson);
 
-      // Close confirmation modal
-      setPrintConfirm(null);
+      // Close confirmation modal if it exists
+      if (printConfirm && printConfirm.id === id) {
+        setPrintConfirm(null);
+      }
 
-      // Reload to show updated status
+      // Reload data
       await load();
     } catch (error) {
-      console.error(`[PRINT] ❌ Error:`, error);
-      alert(`❌ Error: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("[PRINT] Error:", error);
     } finally {
       setPrintingIds(prev => {
         const next = new Set(prev);
@@ -270,6 +273,114 @@ export default function AdminPage() {
     await load();
   }
 
+  async function testWebhook(dokuOrderId: string) {
+    if (!dokuOrderId) {
+      alert("Order tidak memiliki doku_order_id");
+      return;
+    }
+    if (!confirm(`Simulasi webhook payment SUCCESS untuk order ${dokuOrderId}?`)) return;
+
+    try {
+      const r = await fetch("/api/admin/doku-webhook-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify({ doku_order_id: dokuOrderId, status: "SUCCESS" }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(`Gagal: ${j?.error ?? `HTTP ${r.status}`}`);
+        return;
+      }
+
+      alert(`✅ Webhook test berhasil!\n${j?.message ?? ""}`);
+      await load();
+    } catch (error) {
+      alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async function debugWebhook(dokuOrderId: string) {
+    if (!dokuOrderId) {
+      alert("Order tidak memiliki doku_order_id");
+      return;
+    }
+
+    try {
+      const r = await fetch(`/api/admin/webhook-status?invoice_number=${dokuOrderId}`, {
+        headers: authHeader,
+      });
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(`Gagal: ${j?.error ?? `HTTP ${r.status}`}`);
+        return;
+      }
+
+      const webhookReceived = j.webhook_logs && j.webhook_logs.length > 0;
+      const message = `
+📊 Order Status: ${j.order?.status}
+💰 Amount: Rp${new Intl.NumberFormat("id-ID").format(j.order?.amount || 0)}
+📧 Customer: ${j.order?.customer_name}
+
+🔍 Webhook Status:
+${webhookReceived ? "✅ Webhook DITERIMA dari DOKU" : "❌ Webhook TIDAK diterima dari DOKU"}
+
+${webhookReceived ? `📝 Webhook Logs: ${j.webhook_logs.length} entry` : "⚠️ Solusi: Daftarkan webhook URL di DOKU Dashboard"}
+
+${j.recommendation || ""}
+      `.trim();
+
+      alert(message);
+    } catch (error) {
+      alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async function runDiagnostic() {
+    try {
+      const r = await fetch("/api/admin/webhook-diagnostic", {
+        headers: authHeader,
+      });
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(`Gagal: ${j?.error ?? `HTTP ${r.status}`}`);
+        return;
+      }
+
+      const message = `
+🔍 WEBHOOK DIAGNOSTIC REPORT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📡 Connectivity:
+- Edge Function: ${j.connectivity.edge_function_accessible ? "✅ Accessible" : "❌ Not accessible"}
+- URL: ${j.connectivity.edge_function_url}
+
+📊 Database:
+- Total Orders: ${j.database.orders.total}
+- Pending: ${j.database.orders.pending}
+- Paid: ${j.database.orders.paid}
+- Webhook Logs: ${j.database.webhook_logs.total_logs}
+
+🔍 Analysis:
+${j.analysis.issue_description}
+
+Root Cause:
+${j.analysis.root_cause}
+
+Recommendation:
+${j.analysis.recommendation}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      `.trim();
+
+      alert(message);
+    } catch (error) {
+      alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   // Auto-refresh - faster interval for real-time status updates
   useEffect(() => {
     if (!autoRefresh) return;
@@ -281,11 +392,30 @@ export default function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRefresh, password, status, needsPrint, sizeFilter, q, sortDir]);
 
+  // Auto-print when order becomes PAID
+  useEffect(() => {
+    if (!autoPrintEnabled || !qzConnected) return;
+
+    const newlyPaidOrders = qrisOrders.filter(
+      o => o.status === "PAID" && !printingIds.has(o.id)
+    );
+
+    newlyPaidOrders.forEach(async (order) => {
+      console.log(`[AUTO-PRINT] Auto-printing order ${order.id}...`);
+      try {
+        await confirmedMarkPrintedWithOrder(order);
+      } catch (error) {
+        console.error(`[AUTO-PRINT] Failed to auto-print order ${order.id}:`, error);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qrisOrders, autoPrintEnabled, qzConnected]);
+
   const currentOrders = activeTab === "qris" ? qrisOrders : cashierOrders;
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[95%] px-4 py-6 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -298,43 +428,16 @@ export default function AdminPage() {
           </div>
 
           <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={autoRefresh}
-                onChange={(e) => setAutoRefresh(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span>Auto refresh</span>
-              {autoRefresh && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                  Live
-                </span>
-              )}
-            </label>
+            <span className="text-sm text-gray-600">Auto-refresh: ON (2s)</span>
           </div>
         </div>
 
         {/* Password + Refresh */}
         <div className="mt-6 rounded-xl bg-white p-4 shadow-sm border border-gray-200">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">
-                Password Operator
-              </label>
-              <input
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all outline-none"
-                placeholder="••••••••"
-                type="password"
-              />
-            </div>
-
             <button
               onClick={load}
-              className="rounded-lg bg-blue-600 px-6 py-2.5 font-semibold text-white shadow-sm hover:bg-blue-700 active:scale-[0.98] transition-all"
+              className="rounded-lg bg-pink-500 px-6 py-2.5 font-semibold text-white shadow-sm hover:bg-pink-600 active:scale-[0.98] transition-all"
             >
               🔄 Refresh
             </button>
@@ -342,7 +445,7 @@ export default function AdminPage() {
             <button
               onClick={handleConnectQZ}
               className={`rounded-lg px-6 py-2.5 font-semibold text-white shadow-sm active:scale-[0.98] transition-all ${
-                qzConnected ? "bg-green-600 hover:bg-green-700" : "bg-purple-600 hover:bg-purple-700"
+                qzConnected ? "bg-pink-700 hover:bg-pink-800" : "bg-pink-700 hover:bg-pink-800"
               }`}
             >
               {qzConnected ? "✓ QZ Connected" : "Connect QZ"}
@@ -350,19 +453,17 @@ export default function AdminPage() {
 
             <button
               onClick={handleCheckPrinters}
-              className="rounded-lg bg-orange-600 px-6 py-2.5 font-semibold text-white shadow-sm hover:bg-orange-700 active:scale-[0.98] transition-all"
+              className="rounded-lg bg-pink-500 px-6 py-2.5 font-semibold text-white shadow-sm hover:bg-pink-600 active:scale-[0.98] transition-all"
             >
               🔍 Find Printer
             </button>
 
-            <select
-              value={printOrientation}
-              onChange={(e) => setPrintOrientation(e.target.value as PrintOrientation)}
-              className="rounded-lg bg-gray-700 px-4 py-2.5 font-semibold text-white shadow-sm hover:bg-gray-800 active:scale-[0.98] transition-all"
+            <button
+              onClick={runDiagnostic}
+              className="rounded-lg bg-orange-500 px-6 py-2.5 font-semibold text-white shadow-sm hover:bg-orange-600 active:scale-[0.98] transition-all"
             >
-              <option value="portrait">📷 Portrait (4×6)</option>
-              <option value="landscape">📸 Landscape (6×4)</option>
-            </select>
+              🩺 Webhook Diagnostic
+            </button>
           </div>
         </div>
 
@@ -373,7 +474,7 @@ export default function AdminPage() {
             className={[
               "px-4 py-2 rounded-lg font-semibold text-sm transition-all",
               activeTab === "qris"
-                ? "bg-blue-600 text-white shadow"
+                ? "bg-pink-600 text-white shadow"
                 : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
             ].join(" ")}
           >
@@ -450,7 +551,6 @@ export default function AdminPage() {
               <option value="ALL">Semua Ukuran</option>
               <option value="2R">📷 2R (Strip)</option>
               <option value="4R">📷 4R (10×15cm)</option>
-              <option value="4x6">📷 4×6</option>
             </select>
           </div>
 
@@ -520,11 +620,23 @@ export default function AdminPage() {
 
         {/* Table */}
         <div className="mt-4 overflow-hidden rounded-xl bg-white shadow-lg border border-gray-200">
+          {/* Spark Logo */}
+          <div className="flex justify-center pt-4 pb-2">
+            <img
+              src="/logo.png"
+              alt="Spark Logo"
+              className="h-12 w-auto object-contain"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gradient-to-r from-blue-600 to-blue-700 text-white">
+              <thead className="bg-gradient-to-r from-pink-500 to-pink-600 text-white">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">No. Tiket</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Invoice</th>
                   <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Waktu</th>
                   <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Customer</th>
                   <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Detail</th>
@@ -540,6 +652,9 @@ export default function AdminPage() {
                       <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-700 font-bold text-sm">
                         {o.queue_number ?? "-"}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                      <span className="font-mono text-xs">{o.doku_order_id || "-"}</span>
                     </td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
                       {activeTab === "qris" ? (
@@ -605,7 +720,7 @@ export default function AdminPage() {
                           🔗 Open ({Array.isArray(o.image_urls) ? o.image_urls.length : (typeof o.image_urls === 'string' ? 1 : 0)})
                         </button>
 
-                        {/* Download button - Always available for testing */}
+                        {/** Download button - Only available when PAID */}
                         {o.image_urls && o.image_urls.length > 0 && (
                           <button
                             onClick={async () => {
@@ -618,7 +733,9 @@ export default function AdminPage() {
                                   const url = window.URL.createObjectURL(blob);
                                   const link = document.createElement('a');
                                   link.href = url;
-                                  link.download = `Photo No urut - ${o.queue_number || o.id}${i > 0 ? `-${i + 1}` : ''}.jpg`;
+                                  // Get photo size for this image
+                                  const photoSize = (o.photo_sizes && o.photo_sizes[i]) || o.size || '4R';
+                                  link.download = `Photo Urut No ${i + 1} - ${photoSize}.jpg`;
                                   document.body.appendChild(link);
                                   link.click();
                                   document.body.removeChild(link);
@@ -635,41 +752,26 @@ export default function AdminPage() {
                               }
                               console.log('Download complete');
                             }}
-                            className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm transition-all"
+                            disabled={o.status.trim().toUpperCase() !== "PAID"}
+                            className={[
+                              "inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
+                              o.status.trim().toUpperCase() === "PAID"
+                                ? "bg-pink-500 text-white hover:bg-pink-600 shadow-sm"
+                                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                            ].join(" ")}
                           >
                             ⬇️ Download
-                          </button>
-                        )}
-
-                        {/* Download button disabled for non-PAID */}
-                        {o.status !== "PAID" && o.image_urls && o.image_urls.length > 0 && (
-                          <button
-                            disabled
-                            className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-400 cursor-not-allowed transition-colors"
-                            title={`Download available only for PAID orders (current: ${o.status})`}
-                          >
-                            ⬇️ Download
-                          </button>
-                        )}
-
-                        {/* Show Pay button for PENDING (both QRIS and Cashier) */}
-                        {o.status === "PENDING" && (
-                          <button
-                            onClick={() => markPaid(o.id)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm transition-all"
-                          >
-                            💰 Bayar
                           </button>
                         )}
 
                         <button
                           onClick={() => markPrinted(o.id)}
-                          disabled={o.status !== "PAID" || printingIds.has(o.id)}
+                          disabled={printingIds.has(o.id) || o.status.trim().toUpperCase() !== "PAID"}
                           className={[
                             "inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
-                            o.status !== "PAID" || printingIds.has(o.id)
+                            printingIds.has(o.id) || o.status.trim().toUpperCase() !== "PAID"
                               ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                              : "bg-emerald-500 text-white hover:bg-emerald-600 shadow-sm",
+                              : "bg-pink-600 text-white hover:bg-pink-700 shadow-sm",
                           ].join(" ")}
                         >
                           {printingIds.has(o.id) ? "⏳ Printing..." : o.status === "PRINTED" ? "✅ Done" : "🖨️ Print"}
