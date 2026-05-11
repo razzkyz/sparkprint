@@ -92,7 +92,7 @@ export default function KioskPage() {
     setTimeout(() => fileInputRef.current?.focus(), 50);
   }
 
-  // Compress image to reduce file size (landscape mode for print consistency)
+  // Optimize image for high-quality printing (NOT aggressive compression)
   async function compressImage(file: File, fileIndex: number = 0): Promise<Blob> {
     return new Promise((resolve, reject) => {
       try {
@@ -108,11 +108,13 @@ export default function KioskPage() {
                 const canvas = document.createElement("canvas");
                 let { width, height } = img;
 
-                // Print dimensions optimized for file size and quality
-                // 4R (10x15cm) at 300 DPI = ~1182x1773 pixels
-                // Reduced to control file size aggressively
-                const maxWidth = 1200;
-                const maxHeight = 1600;
+                // Paper size @ 300 DPI - don't resize below these minimums:
+                // 2R (2"×6") = 600×1800px
+                // 4R (3.94"×5.91") = 1182×1773px  
+                // 4x6 (4"×6") = 1200×1800px
+                // Scale only if MUCH larger than needed
+                const maxWidth = 2000;
+                const maxHeight = 2400;
 
                 if (width > height) {
                   if (width > maxWidth) {
@@ -134,6 +136,10 @@ export default function KioskPage() {
                   return;
                 }
 
+                // Enable HIGH quality image smoothing for better rendering
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = "high";
+
                 console.log(`[Compress] File ${fileIndex}: ${file.name}`, {
                   originalSize: (file.size / 1024 / 1024).toFixed(2) + 'MB',
                   originalDimensions: `${img.width}x${img.height}`,
@@ -141,55 +147,25 @@ export default function KioskPage() {
                 });
 
                 ctx.drawImage(img, 0, 0, width, height);
+                
+                // Use JPEG with HIGH quality (0.95) for print - NOT WebP aggressive compression
                 canvas.toBlob(
                   (blob) => {
                     if (blob) {
-                      console.log(`[Compress] File ${fileIndex} compressed:`, {
+                      console.log(`[Compress] File ${fileIndex} optimized:`, {
                         originalSize: (file.size / 1024 / 1024).toFixed(2) + 'MB',
-                        compressedSize: (blob.size / 1024 / 1024).toFixed(2) + 'MB',
+                        optimizedSize: (blob.size / 1024 / 1024).toFixed(2) + 'MB',
                         ratio: ((blob.size / file.size) * 100).toFixed(1) + '%',
+                        format: 'JPEG',
+                        quality: '95%',
                       });
-                      
-                      // If still too large (>3MB), compress again with even lower quality
-                      if (blob.size > 3 * 1024 * 1024) {
-                        const canvas2 = document.createElement("canvas");
-                        const img2 = new Image();
-                        img2.src = URL.createObjectURL(blob);
-                        img2.onload = () => {
-                          canvas2.width = img2.width;
-                          canvas2.height = img2.height;
-                          const ctx2 = canvas2.getContext("2d");
-                          if (ctx2) {
-                            ctx2.drawImage(img2, 0, 0);
-                            canvas2.toBlob(
-                              (finalBlob) => {
-                                if (finalBlob) {
-                                  console.log(`[Compress] File ${fileIndex} re-compressed:`, {
-                                    originalSize: (file.size / 1024 / 1024).toFixed(2) + 'MB',
-                                    compressedSize: (finalBlob.size / 1024 / 1024).toFixed(2) + 'MB',
-                                    ratio: ((finalBlob.size / file.size) * 100).toFixed(1) + '%',
-                                  });
-                                  resolve(finalBlob);
-                                } else {
-                                  resolve(blob);
-                                }
-                              },
-                              "image/webp",
-                              0.75
-                            );
-                          } else {
-                            resolve(blob);
-                          }
-                        };
-                      } else {
-                        resolve(blob);
-                      }
+                      resolve(blob);
                     } else {
                       reject(new Error(`Compression failed for file ${fileIndex}: blob is null`));
                     }
                   },
-                  "image/webp",
-                  0.85
+                  "image/jpeg",
+                  0.95
                 );
               } catch (error) {
                 reject(new Error(`Canvas processing error for file ${fileIndex}: ${error instanceof Error ? error.message : String(error)}`));
@@ -239,7 +215,7 @@ export default function KioskPage() {
       return;
     }
 
-    setStatus({ kind: "info", text: `Mengkompresi foto (${files.length})...` });
+    setStatus({ kind: "info", text: `Mengoptimasi foto untuk print (${files.length})...` });
 
     try {
       // Compress semua files dengan tracking index untuk debugging
@@ -258,18 +234,19 @@ export default function KioskPage() {
 
       // Create File objects from compressed blobs
       const compressedFiles = compressedBlobs.map((blob, idx) => {
-        const originalName = files[idx].name.replace(/\.[^.]+$/, '.webp');
-        const fileObj = new File([blob], originalName, { type: 'image/webp' });
+        const originalName = files[idx].name.replace(/\.[^.]+$/, '.jpg');
+        const fileObj = new File([blob], originalName, { type: 'image/jpeg' });
         console.log(`[Upload] Created File object ${idx + 1}:`, {
           name: fileObj.name,
           size: (fileObj.size / 1024 / 1024).toFixed(2) + 'MB',
           type: fileObj.type,
+          quality: '95%',
         });
         return fileObj;
       });
 
-      console.log('[Upload] All files compressed successfully:', 
-        compressedFiles.map((f, i) => `${i + 1}. ${f.name} (${(f.size/1024/1024).toFixed(2)}MB)`).join(', ')
+      console.log('[Upload] All files optimized for printing:', 
+        compressedFiles.map((f, i) => `${i + 1}. ${f.name} (${(f.size/1024/1024).toFixed(2)}MB, quality: 95%)`).join(', ')
       );
 
       setUploadedUrls(prev => [...prev, ...compressedFiles]);
