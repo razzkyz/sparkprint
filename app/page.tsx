@@ -2,7 +2,6 @@
 
 import Script from "next/script";
 import { useMemo, useRef, useState } from "react";
-import { createPrintOrder } from "@/app/actions/print-orders";
 
 declare global {
   interface Window {
@@ -371,193 +370,28 @@ export default function KioskPage() {
       formData.append("payment_method", "qris");
       formData.append("user_agent", navigator.userAgent);
 
-      console.log("[PAYMENT] Sending order to server action...");
+      console.log("[PAYMENT] Sending order to API route...");
       console.log("[PAYMENT] FormData photo count:", uploadedUrls.length);
       console.log("[PAYMENT] Photo sizes:", photoSizes);
       console.log("[PAYMENT] User agent:", navigator.userAgent);
       console.log("[PAYMENT] Total file size:", uploadedUrls.reduce((sum, f) => sum + f.size, 0));
 
-      // Detect iOS - use API route for multiple files (server action has FormData serialization issue on iOS)
-      const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-      const useAPIRoute = isIOSDevice && uploadedUrls.length > 1;
-
-      let result: Awaited<ReturnType<typeof createPrintOrder>>;
-      if (useAPIRoute) {
-        console.log("[PAYMENT] iOS with multiple files detected - using API route instead of server action");
-        try {
-          // Log FormData contents before sending
-          console.log("[PAYMENT] FormData preparation:");
-          const formDataDebug: Record<string, any> = {};
-          formData.forEach((value, key) => {
-            if (value instanceof File) {
-              formDataDebug[key] = `File: ${value.name} (${value.size} bytes, ${value.type})`;
-            } else {
-              formDataDebug[key] = String(value);
-            }
-          });
-          console.log("[PAYMENT] FormData contents:", formDataDebug);
-
-          console.log("[PAYMENT] Starting fetch to /api/print-orders");
-          
-          // Create abort controller with timeout for iOS network requests (120 seconds)
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => {
-            console.log("[PAYMENT] Fetch timeout - aborting request");
-            controller.abort();
-          }, 120000); // 2 minute timeout for large file uploads
-
-          try {
-            const apiResponse = await fetch('/api/print-orders', {
-              method: 'POST',
-              body: formData,
-              signal: controller.signal,
-              // Don't set Content-Type header - browser will set it with boundary
-            });
-
-            clearTimeout(timeoutId);
-            
-            console.log("[PAYMENT] Fetch response received:", {
-              status: apiResponse.status,
-              statusText: apiResponse.statusText,
-              contentType: apiResponse.headers.get("content-type"),
-            });
-
-            let apiData;
-            try {
-              apiData = await apiResponse.json();
-            } catch (parseError) {
-              console.error("[PAYMENT] Failed to parse API response:", parseError);
-              console.error("[PAYMENT] Response status:", apiResponse.status);
-              const responseText = await apiResponse.text();
-              console.error("[PAYMENT] Response text:", responseText.substring(0, 500));
-              throw new Error(`Failed to parse API response: ${parseError instanceof Error ? parseError.message : "Unknown parse error"}`);
-            }
-
-            if (!apiResponse.ok) {
-              console.error("[PAYMENT] API route failed:", {
-                status: apiResponse.status,
-                statusText: apiResponse.statusText,
-                error: apiData?.error,
-                message: apiData?.message,
-                details: apiData?.details,
-                photoIndex: apiData?.photoIndex,
-                totalPhotos: apiData?.totalPhotos,
-              });
-              
-              // Provide detailed error message including which photo failed
-              let errorMsg = apiData?.message || apiData?.error || `API error (${apiResponse.status})`;
-              if (apiData?.photoIndex && apiData?.totalPhotos) {
-                const failedPhoto = uploadedUrls[apiData.photoIndex - 1];
-                errorMsg = `${errorMsg} - Foto ${apiData.photoIndex}/${apiData.totalPhotos} (${failedPhoto?.name || 'unknown'})`;
-              }
-              throw new Error(errorMsg);
-            }
-
-            if (!apiData.order_id || !apiData.doku_order_id) {
-              console.error("[PAYMENT] Invalid API response - missing order IDs:", apiData);
-              throw new Error("Invalid API response: missing order information");
-            }
-
-            result = {
-              status: 200,
-              order_id: apiData.order_id,
-              doku_order_id: apiData.doku_order_id,
-              payment_url: apiData.payment_url || null,
-              image_url: apiData.image_url,
-            };
-            console.log("[PAYMENT] API route success:", {
-              has_payment_url: !!result.payment_url,
-              order_id: result.order_id,
-            });
-          } catch (fetchError) {
-            clearTimeout(timeoutId);
-            if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-              console.error("[PAYMENT] Request timeout or aborted - file upload took too long");
-              throw new Error("Upload timeout - request took too long. Please check your internet connection.");
-            }
-            throw fetchError;
-          }
-        } catch (apiError) {
-          console.error("[PAYMENT] API route call failed - Error details:");
-          console.error("[PAYMENT] Error:", apiError);
-          console.error("[PAYMENT] Error type:", typeof apiError);
-          if (apiError instanceof TypeError) {
-            console.error("[PAYMENT] TypeError details:", {
-              message: apiError.message,
-              stack: apiError.stack,
-            });
-          }
-          console.error("[PAYMENT] Error message:", apiError instanceof Error ? apiError.message : String(apiError));
-          
-          // Log that we're falling back to server action
-          console.log("[PAYMENT] API route failed on iOS, attempting fallback to server action...");
-          
-          // Fallback: Try server action even on iOS (slower but might work)
-          try {
-            const timeoutPromise = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error("Server action timeout after 90 seconds")), 90000);
-            });
-
-            result = await Promise.race([
-              createPrintOrder(formData),
-              timeoutPromise
-            ]) as Awaited<ReturnType<typeof createPrintOrder>>;
-            
-            console.log("[PAYMENT] Fallback to server action succeeded");
-          } catch (serverActionError) {
-            console.error("[PAYMENT] Fallback to server action also failed:", serverActionError);
-            // Re-throw the original API error since both failed
-            throw new Error(`Upload failed (API error: ${apiError instanceof Error ? apiError.message : "unknown"}). Please try again with a better connection or fewer/smaller photos.`);
-          }
-        }
-      } else {
-        // Use server action for single files or non-iOS browsers
-        try {
-          // Add timeout for server action call
-          const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error("Server action timeout after 60 seconds")), 60000);
-          });
-
-          result = await Promise.race([
-            createPrintOrder(formData),
-            timeoutPromise
-          ]) as Awaited<ReturnType<typeof createPrintOrder>>;
-        } catch (serverActionError) {
-          console.error("[PAYMENT] Server action call failed:", serverActionError);
-          console.error("[PAYMENT] Error type:", typeof serverActionError);
-          console.error("[PAYMENT] Error constructor:", serverActionError?.constructor?.name);
-          console.error("[PAYMENT] Error name:", serverActionError instanceof Error ? serverActionError.name : 'Unknown');
-          console.error("[PAYMENT] Error message:", serverActionError instanceof Error ? serverActionError.message : String(serverActionError));
-          console.error("[PAYMENT] Error keys:", Object.keys(serverActionError || {}));
-          throw serverActionError;
-        }
-      }
-
-      console.log("[PAYMENT] Payment action result:", {
-        has_status: !!result?.status,
-        has_error: !!result?.error,
-        status: result?.status,
-        error: result?.error,
-        keys: Object.keys(result || {}),
+      const r = await fetch("/api/print-orders", {
+        method: "POST",
+        body: formData,
       });
 
-      if (!result || typeof result !== 'object') {
-        console.error("[PAYMENT] Invalid result object:", result);
-        throw new Error("Invalid server response: " + JSON.stringify(result));
+      console.log("[PAYMENT] API response status:", r.status);
+
+      const j = await r.json().catch(() => ({}));
+
+      console.log("[PAYMENT] API response data:", j);
+
+      if (!r.ok) {
+        throw new Error(j?.error ?? `Server error ${r.status}`);
       }
 
-      if (result.status !== 200 || result.error) {
-        console.error("[PAYMENT] Payment action failed:", result);
-        // Better error messages for common issues
-        if (result.status === 413) {
-          throw new Error("Error 413: File terlalu besar. Jumlah gambar atau ukuran file melebihi batas. Coba upload dengan jumlah foto lebih sedikit.");
-        }
-        const errorMsg = result.error || "Terjadi kesalahan saat membuat pesanan";
-        console.error("[PAYMENT] Error message:", errorMsg);
-        throw new Error(errorMsg);
-      }
-
-      const { doku_order_id, order_id, payment_url } = result as {
+      const { doku_order_id, order_id, payment_url } = j as {
         payment_url?: string;
         doku_order_id: string;
         order_id: string;
@@ -603,7 +437,10 @@ export default function KioskPage() {
 
       window.addEventListener("error", handleDokuError);
 
-      if (isIOSDevice) {
+      // Detect iOS - use direct redirect for better compatibility
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+      if (isIOS) {
         console.log("[PAYMENT] iOS device detected - using direct redirect for better compatibility");
         window.location.href = payment_url;
       } else if (typeof window.loadJokulCheckout === "function") {
