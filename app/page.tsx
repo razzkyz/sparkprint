@@ -1,7 +1,8 @@
 "use client";
 
 import Script from "next/script";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { createPrintOrder } from "@/app/actions/print-orders";
 
 declare global {
   interface Window {
@@ -9,12 +10,11 @@ declare global {
   }
 }
 
-type SizeKey = "2R" | "4R" | "4x6";
+type SizeKey = "2R" | "4R";
 
 const SIZE_OPTIONS: { key: SizeKey; label: string; desc: string; price: number }[] = [
   { key: "2R", label: "2R", desc: "Strip Portrait (2×6in)", price: 15000 },
-  { key: "4R", label: "4R", desc: "Glossy (10×15cm)", price: 20000 },
-  { key: "4x6", label: "4×6", desc: "Standard (6×4in)", price: 20000 },
+  { key: "4R", label: "4R", desc: "Glossy (10×15cm)", price: 15000 },
 ];
 
 function unitPrice(size: SizeKey) {
@@ -27,7 +27,7 @@ function formatIDR(n: number) {
 
 function isValidEmail(email: string) {
   if (!email) return true;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  return /^[^\s@]+@[^\s@]+\.com$/i.test(email);
 }
 
 const SUCCESS_MODAL_AUTO_CLOSE_MS = 3000;
@@ -94,54 +94,119 @@ export default function KioskPage() {
   }
 
   // Compress image to reduce file size (landscape mode for print consistency)
-  async function compressImage(file: File): Promise<Blob> {
+  async function compressImage(file: File, fileIndex: number = 0): Promise<Blob> {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          let { width, height } = img;
+      try {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+          try {
+            const img = new Image();
+            img.src = event.target?.result as string;
+            
+            img.onload = () => {
+              try {
+                const canvas = document.createElement("canvas");
+                let { width, height } = img;
 
-          // Landscape dimensions for print consistency (1800x1200 @ 300 DPI)
-          const maxWidth = 1800;
-          const maxHeight = 1200;
+                // Print dimensions optimized for file size and quality
+                // 4R (10x15cm) at 300 DPI = ~1182x1773 pixels
+                // Reduced to control file size aggressively
+                const maxWidth = 1200;
+                const maxHeight = 1600;
 
-          if (width > height) {
-            if (width > maxWidth) {
-              height = (maxWidth / width) * height;
-              width = maxWidth;
-            }
-          } else {
-            if (height > maxHeight) {
-              width = (maxHeight / height) * width;
-              height = maxHeight;
-            }
+                if (width > height) {
+                  if (width > maxWidth) {
+                    height = (maxWidth / width) * height;
+                    width = maxWidth;
+                  }
+                } else {
+                  if (height > maxHeight) {
+                    width = (maxHeight / height) * width;
+                    height = maxHeight;
+                  }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext("2d");
+                if (!ctx) {
+                  reject(new Error("Failed to get canvas context"));
+                  return;
+                }
+
+                console.log(`[Compress] File ${fileIndex}: ${file.name}`, {
+                  originalSize: (file.size / 1024 / 1024).toFixed(2) + 'MB',
+                  originalDimensions: `${img.width}x${img.height}`,
+                  targetDimensions: `${width}x${height}`,
+                });
+
+                ctx.drawImage(img, 0, 0, width, height);
+                canvas.toBlob(
+                  (blob) => {
+                    if (blob) {
+                      console.log(`[Compress] File ${fileIndex} compressed:`, {
+                        originalSize: (file.size / 1024 / 1024).toFixed(2) + 'MB',
+                        compressedSize: (blob.size / 1024 / 1024).toFixed(2) + 'MB',
+                        ratio: ((blob.size / file.size) * 100).toFixed(1) + '%',
+                      });
+                      
+                      // If still too large (>3MB), compress again with even lower quality
+                      if (blob.size > 3 * 1024 * 1024) {
+                        const canvas2 = document.createElement("canvas");
+                        const img2 = new Image();
+                        img2.src = URL.createObjectURL(blob);
+                        img2.onload = () => {
+                          canvas2.width = img2.width;
+                          canvas2.height = img2.height;
+                          const ctx2 = canvas2.getContext("2d");
+                          if (ctx2) {
+                            ctx2.drawImage(img2, 0, 0);
+                            canvas2.toBlob(
+                              (finalBlob) => {
+                                if (finalBlob) {
+                                  console.log(`[Compress] File ${fileIndex} re-compressed:`, {
+                                    originalSize: (file.size / 1024 / 1024).toFixed(2) + 'MB',
+                                    compressedSize: (finalBlob.size / 1024 / 1024).toFixed(2) + 'MB',
+                                    ratio: ((finalBlob.size / file.size) * 100).toFixed(1) + '%',
+                                  });
+                                  resolve(finalBlob);
+                                } else {
+                                  resolve(blob);
+                                }
+                              },
+                              "image/webp",
+                              0.55
+                            );
+                          } else {
+                            resolve(blob);
+                          }
+                        };
+                      } else {
+                        resolve(blob);
+                      }
+                    } else {
+                      reject(new Error(`Compression failed for file ${fileIndex}: blob is null`));
+                    }
+                  },
+                  "image/webp",
+                  0.65
+                );
+              } catch (error) {
+                reject(new Error(`Canvas processing error for file ${fileIndex}: ${error instanceof Error ? error.message : String(error)}`));
+              }
+            };
+            
+            img.onerror = () => reject(new Error(`Failed to load image for file ${fileIndex}: ${file.name}`));
+          } catch (error) {
+            reject(new Error(`Image loading error for file ${fileIndex}: ${error instanceof Error ? error.message : String(error)}`));
           }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            reject(new Error("Failed to get canvas context"));
-            return;
-          }
-
-          ctx.drawImage(img, 0, 0, width, height);
-          canvas.toBlob(
-            (blob) => {
-              if (blob) resolve(blob);
-              else reject(new Error("Compression failed"));
-            },
-            "image/webp",
-            0.85
-          );
         };
-        img.onerror = () => reject(new Error("Failed to load image"));
-      };
-      reader.onerror = () => reject(new Error("Failed to read file"));
+
+        reader.onerror = () => reject(new Error(`Failed to read file ${fileIndex}: ${file.name}`));
+      } catch (error) {
+        reject(new Error(`Compression process error for file ${fileIndex}: ${error instanceof Error ? error.message : String(error)}`));
+      }
     });
   }
 
@@ -150,9 +215,9 @@ export default function KioskPage() {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    // Allow up to 5 photos
-    if (files.length > 5) {
-      setStatus({ kind: "err", text: "Maksimal 5 foto yang boleh diupload sekaligus. Silakan pilih maksimal 5 foto." });
+    // Allow up to 10 photos per upload
+    if (files.length > 10) {
+      setStatus({ kind: "err", text: "Maksimal 10 foto per upload. Silakan pilih maksimal 10 foto." });
       e.target.value = "";
       return;
     }
@@ -166,11 +231,11 @@ export default function KioskPage() {
       return;
     }
 
-    // Validate file sizes (max 20MB each to avoid 413 errors)
-    const maxSize = 20 * 1024 * 1024;
+    // Validate file sizes (max 10MB per file)
+    const maxSize = 10 * 1024 * 1024;
     const oversizedFiles = files.filter(f => f.size > maxSize);
     if (oversizedFiles.length > 0) {
-      setStatus({ kind: "err", text: "Ukuran file terlalu besar. Maksimal 20MB per file." });
+      setStatus({ kind: "err", text: "Ukuran file terlalu besar. Maksimal 10MB per file." });
       e.target.value = "";
       return;
     }
@@ -178,8 +243,16 @@ export default function KioskPage() {
     setStatus({ kind: "info", text: `Mengkompresi foto (${files.length})...` });
 
     try {
-      // Compress semua files
-      const compressedBlobs = await Promise.all(files.map(f => compressImage(f)));
+      // Compress semua files dengan tracking index untuk debugging
+      const compressedBlobs = await Promise.all(
+        files.map((f, idx) => 
+          compressImage(f, idx)
+            .catch(err => {
+              console.error(`[Upload] Compression failed for file ${idx + 1}:`, err);
+              throw new Error(`File ${idx + 1} (${f.name}): ${err instanceof Error ? err.message : String(err)}`);
+            })
+        )
+      );
 
       // Create previews using object URLs (lightweight)
       const newPreviews = compressedBlobs.map(blob => URL.createObjectURL(blob));
@@ -187,10 +260,18 @@ export default function KioskPage() {
       // Create File objects from compressed blobs
       const compressedFiles = compressedBlobs.map((blob, idx) => {
         const originalName = files[idx].name.replace(/\.[^.]+$/, '.webp');
-        return new File([blob], originalName, { type: 'image/webp' });
+        const fileObj = new File([blob], originalName, { type: 'image/webp' });
+        console.log(`[Upload] Created File object ${idx + 1}:`, {
+          name: fileObj.name,
+          size: (fileObj.size / 1024 / 1024).toFixed(2) + 'MB',
+          type: fileObj.type,
+        });
+        return fileObj;
       });
 
-      console.log('[Upload] Compressed files:', compressedFiles.map(f => `${f.name} (${(f.size/1024/1024).toFixed(2)}MB)`));
+      console.log('[Upload] All files compressed successfully:', 
+        compressedFiles.map((f, i) => `${i + 1}. ${f.name} (${(f.size/1024/1024).toFixed(2)}MB)`).join(', ')
+      );
 
       setUploadedUrls(prev => [...prev, ...compressedFiles]);
       setPreviewUrls(prev => [...prev, ...newPreviews]);
@@ -270,8 +351,16 @@ export default function KioskPage() {
     try {
       // Create FormData dengan compressed files
       const formData = new FormData();
-      uploadedUrls.forEach((file) => {
-        console.log("[PAYMENT] Adding file to FormData:", file.name, file.size, file.type);
+      
+      console.log("[PAYMENT] Preparing FormData with files:");
+      uploadedUrls.forEach((file, idx) => {
+        console.log(`[PAYMENT] File ${idx + 1}:`, {
+          name: file.name,
+          size: file.size,
+          sizeInMB: (file.size / 1024 / 1024).toFixed(2),
+          type: file.type,
+          photoSize: photoSizes[idx],
+        });
         formData.append("photos", file);
       });
       // Send per-photo sizes array as JSON string
@@ -282,28 +371,193 @@ export default function KioskPage() {
       formData.append("payment_method", "qris");
       formData.append("user_agent", navigator.userAgent);
 
-      console.log("[PAYMENT] Sending order to API route...");
+      console.log("[PAYMENT] Sending order to server action...");
       console.log("[PAYMENT] FormData photo count:", uploadedUrls.length);
       console.log("[PAYMENT] Photo sizes:", photoSizes);
       console.log("[PAYMENT] User agent:", navigator.userAgent);
       console.log("[PAYMENT] Total file size:", uploadedUrls.reduce((sum, f) => sum + f.size, 0));
 
-      const r = await fetch("/api/print-orders", {
-        method: "POST",
-        body: formData,
-      });
+      // Detect iOS - use API route for multiple files (server action has FormData serialization issue on iOS)
+      const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      const useAPIRoute = isIOSDevice && uploadedUrls.length > 1;
 
-      console.log("[PAYMENT] API response status:", r.status);
+      let result: Awaited<ReturnType<typeof createPrintOrder>>;
+      if (useAPIRoute) {
+        console.log("[PAYMENT] iOS with multiple files detected - using API route instead of server action");
+        try {
+          // Log FormData contents before sending
+          console.log("[PAYMENT] FormData preparation:");
+          const formDataDebug: Record<string, any> = {};
+          formData.forEach((value, key) => {
+            if (value instanceof File) {
+              formDataDebug[key] = `File: ${value.name} (${value.size} bytes, ${value.type})`;
+            } else {
+              formDataDebug[key] = String(value);
+            }
+          });
+          console.log("[PAYMENT] FormData contents:", formDataDebug);
 
-      const j = await r.json().catch(() => ({}));
+          console.log("[PAYMENT] Starting fetch to /api/print-orders");
+          
+          // Create abort controller with timeout for iOS network requests (120 seconds)
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => {
+            console.log("[PAYMENT] Fetch timeout - aborting request");
+            controller.abort();
+          }, 120000); // 2 minute timeout for large file uploads
 
-      console.log("[PAYMENT] API response data:", j);
+          try {
+            const apiResponse = await fetch('/api/print-orders', {
+              method: 'POST',
+              body: formData,
+              signal: controller.signal,
+              // Don't set Content-Type header - browser will set it with boundary
+            });
 
-      if (!r.ok) {
-        throw new Error(j?.error ?? `Server error ${r.status}`);
+            clearTimeout(timeoutId);
+            
+            console.log("[PAYMENT] Fetch response received:", {
+              status: apiResponse.status,
+              statusText: apiResponse.statusText,
+              contentType: apiResponse.headers.get("content-type"),
+            });
+
+            let apiData;
+            try {
+              apiData = await apiResponse.json();
+            } catch (parseError) {
+              console.error("[PAYMENT] Failed to parse API response:", parseError);
+              console.error("[PAYMENT] Response status:", apiResponse.status);
+              const responseText = await apiResponse.text();
+              console.error("[PAYMENT] Response text:", responseText.substring(0, 500));
+              throw new Error(`Failed to parse API response: ${parseError instanceof Error ? parseError.message : "Unknown parse error"}`);
+            }
+
+            if (!apiResponse.ok) {
+              console.error("[PAYMENT] API route failed:", {
+                status: apiResponse.status,
+                statusText: apiResponse.statusText,
+                error: apiData?.error,
+                message: apiData?.message,
+                details: apiData?.details,
+                photoIndex: apiData?.photoIndex,
+                totalPhotos: apiData?.totalPhotos,
+              });
+              
+              // Provide detailed error message including which photo failed
+              let errorMsg = apiData?.message || apiData?.error || `API error (${apiResponse.status})`;
+              if (apiData?.photoIndex && apiData?.totalPhotos) {
+                const failedPhoto = uploadedUrls[apiData.photoIndex - 1];
+                errorMsg = `${errorMsg} - Foto ${apiData.photoIndex}/${apiData.totalPhotos} (${failedPhoto?.name || 'unknown'})`;
+              }
+              throw new Error(errorMsg);
+            }
+
+            if (!apiData.order_id || !apiData.doku_order_id) {
+              console.error("[PAYMENT] Invalid API response - missing order IDs:", apiData);
+              throw new Error("Invalid API response: missing order information");
+            }
+
+            result = {
+              status: 200,
+              order_id: apiData.order_id,
+              doku_order_id: apiData.doku_order_id,
+              payment_url: apiData.payment_url || null,
+              image_url: apiData.image_url,
+            };
+            console.log("[PAYMENT] API route success:", {
+              has_payment_url: !!result.payment_url,
+              order_id: result.order_id,
+            });
+          } catch (fetchError) {
+            clearTimeout(timeoutId);
+            if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+              console.error("[PAYMENT] Request timeout or aborted - file upload took too long");
+              throw new Error("Upload timeout - request took too long. Please check your internet connection.");
+            }
+            throw fetchError;
+          }
+        } catch (apiError) {
+          console.error("[PAYMENT] API route call failed - Error details:");
+          console.error("[PAYMENT] Error:", apiError);
+          console.error("[PAYMENT] Error type:", typeof apiError);
+          if (apiError instanceof TypeError) {
+            console.error("[PAYMENT] TypeError details:", {
+              message: apiError.message,
+              stack: apiError.stack,
+            });
+          }
+          console.error("[PAYMENT] Error message:", apiError instanceof Error ? apiError.message : String(apiError));
+          
+          // Log that we're falling back to server action
+          console.log("[PAYMENT] API route failed on iOS, attempting fallback to server action...");
+          
+          // Fallback: Try server action even on iOS (slower but might work)
+          try {
+            const timeoutPromise = new Promise((_, reject) => {
+              setTimeout(() => reject(new Error("Server action timeout after 90 seconds")), 90000);
+            });
+
+            result = await Promise.race([
+              createPrintOrder(formData),
+              timeoutPromise
+            ]) as Awaited<ReturnType<typeof createPrintOrder>>;
+            
+            console.log("[PAYMENT] Fallback to server action succeeded");
+          } catch (serverActionError) {
+            console.error("[PAYMENT] Fallback to server action also failed:", serverActionError);
+            // Re-throw the original API error since both failed
+            throw new Error(`Upload failed (API error: ${apiError instanceof Error ? apiError.message : "unknown"}). Please try again with a better connection or fewer/smaller photos.`);
+          }
+        }
+      } else {
+        // Use server action for single files or non-iOS browsers
+        try {
+          // Add timeout for server action call
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("Server action timeout after 60 seconds")), 60000);
+          });
+
+          result = await Promise.race([
+            createPrintOrder(formData),
+            timeoutPromise
+          ]) as Awaited<ReturnType<typeof createPrintOrder>>;
+        } catch (serverActionError) {
+          console.error("[PAYMENT] Server action call failed:", serverActionError);
+          console.error("[PAYMENT] Error type:", typeof serverActionError);
+          console.error("[PAYMENT] Error constructor:", serverActionError?.constructor?.name);
+          console.error("[PAYMENT] Error name:", serverActionError instanceof Error ? serverActionError.name : 'Unknown');
+          console.error("[PAYMENT] Error message:", serverActionError instanceof Error ? serverActionError.message : String(serverActionError));
+          console.error("[PAYMENT] Error keys:", Object.keys(serverActionError || {}));
+          throw serverActionError;
+        }
       }
 
-      const { doku_order_id, order_id, payment_url } = j as {
+      console.log("[PAYMENT] Payment action result:", {
+        has_status: !!result?.status,
+        has_error: !!result?.error,
+        status: result?.status,
+        error: result?.error,
+        keys: Object.keys(result || {}),
+      });
+
+      if (!result || typeof result !== 'object') {
+        console.error("[PAYMENT] Invalid result object:", result);
+        throw new Error("Invalid server response: " + JSON.stringify(result));
+      }
+
+      if (result.status !== 200 || result.error) {
+        console.error("[PAYMENT] Payment action failed:", result);
+        // Better error messages for common issues
+        if (result.status === 413) {
+          throw new Error("Error 413: File terlalu besar. Jumlah gambar atau ukuran file melebihi batas. Coba upload dengan jumlah foto lebih sedikit.");
+        }
+        const errorMsg = result.error || "Terjadi kesalahan saat membuat pesanan";
+        console.error("[PAYMENT] Error message:", errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      const { doku_order_id, order_id, payment_url } = result as {
         payment_url?: string;
         doku_order_id: string;
         order_id: string;
@@ -335,6 +589,9 @@ export default function KioskPage() {
       console.log("[PAYMENT] Order ID (UUID):", order_id);
       console.log("[PAYMENT] DOKU Order ID (Invoice):", doku_order_id);
 
+      // Reset form after order is created to prevent adding more photos to an existing order
+      resetForm();
+
       // Add error handler for window errors (catches DOKU SDK 404 errors)
       const handleDokuError = (event: ErrorEvent) => {
         if (event.message?.includes("404") || event.filename?.includes("checkout.doku.com")) {
@@ -346,8 +603,10 @@ export default function KioskPage() {
 
       window.addEventListener("error", handleDokuError);
 
-      // Load DOKU checkout
-      if (typeof window.loadJokulCheckout === "function") {
+      if (isIOSDevice) {
+        console.log("[PAYMENT] iOS device detected - using direct redirect for better compatibility");
+        window.location.href = payment_url;
+      } else if (typeof window.loadJokulCheckout === "function") {
         try {
           console.log("[PAYMENT] Loading DOKU Jokul Checkout...");
           window.loadJokulCheckout(payment_url);
@@ -417,11 +676,12 @@ export default function KioskPage() {
           kind: "warn",
           text: `Pembayaran pending. Order ID: ${doku_order_id}. Selesaikan pembayaran di halaman DOKU.`,
         });
+        // Reset form after payment timeout so user can start fresh
       }, 300000);
 
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Pay error:", e);
-      setStatus({ kind: "err", text: e?.message ?? "Error" });
+      setStatus({ kind: "err", text: (e as Error)?.message ?? "Error" });
     } finally {
       setLoading(false);
     }
@@ -438,6 +698,15 @@ export default function KioskPage() {
 
   return (
     <>
+      <Script
+        src="https://cdn.jsdelivr.net/npm/eruda"
+        strategy="afterInteractive"
+        onLoad={() => {
+          if (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).eruda) {
+            ((window as unknown as Record<string, unknown>).eruda as { init: () => void }).init?.();
+          }
+        }}
+      />
       <Script
         src={dokuScriptUrl}
         strategy="afterInteractive"
@@ -644,7 +913,7 @@ export default function KioskPage() {
                     <div className="flex flex-col items-center gap-2">
                       <span className="text-2xl">📷</span>
                       <span className="font-medium">Klik untuk upload foto</span>
-                      <span className="text-sm text-gray-500">PNG, JPG, atau WebP (max 10MB per file)</span>
+                      <span className="text-sm text-gray-500">PNG, JPG, atau WebP (max 10MB per file, max 10 foto)</span>
                       <span className="text-xs text-gray-400">Bisa pilih multiple file sekaligus</span>
                     </div>
                   </button>
@@ -658,6 +927,7 @@ export default function KioskPage() {
                           onClick={() => {
                             setUploadedUrls([]);
                             setPreviewUrls([]);
+                            setPhotoSizes([]);
                           }}
                           className="text-xs text-red-600 hover:text-red-700"
                         >
