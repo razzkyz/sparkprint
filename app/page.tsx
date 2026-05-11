@@ -271,6 +271,7 @@ export default function KioskPage() {
       // Create FormData dengan compressed files
       const formData = new FormData();
       uploadedUrls.forEach((file) => {
+        console.log("[PAYMENT] Adding file to FormData:", file.name, file.size, file.type);
         formData.append("photos", file);
       });
       // Send per-photo sizes array as JSON string
@@ -279,13 +280,24 @@ export default function KioskPage() {
       formData.append("customer_name", name.trim());
       formData.append("customer_email", email.trim());
       formData.append("payment_method", "qris");
+      formData.append("user_agent", navigator.userAgent);
+
+      console.log("[PAYMENT] Sending order to API route...");
+      console.log("[PAYMENT] FormData photo count:", uploadedUrls.length);
+      console.log("[PAYMENT] Photo sizes:", photoSizes);
+      console.log("[PAYMENT] User agent:", navigator.userAgent);
+      console.log("[PAYMENT] Total file size:", uploadedUrls.reduce((sum, f) => sum + f.size, 0));
 
       const r = await fetch("/api/print-orders", {
         method: "POST",
         body: formData,
       });
 
+      console.log("[PAYMENT] API response status:", r.status);
+
       const j = await r.json().catch(() => ({}));
+
+      console.log("[PAYMENT] API response data:", j);
 
       if (!r.ok) {
         throw new Error(j?.error ?? `Server error ${r.status}`);
