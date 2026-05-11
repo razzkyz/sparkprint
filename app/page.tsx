@@ -175,7 +175,7 @@ export default function KioskPage() {
                                 }
                               },
                               "image/webp",
-                              0.55
+                              0.75
                             );
                           } else {
                             resolve(blob);
@@ -189,7 +189,7 @@ export default function KioskPage() {
                     }
                   },
                   "image/webp",
-                  0.65
+                  0.85
                 );
               } catch (error) {
                 reject(new Error(`Canvas processing error for file ${fileIndex}: ${error instanceof Error ? error.message : String(error)}`));
