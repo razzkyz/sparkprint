@@ -289,7 +289,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid size in photo_sizes" }, { status: 400 });
     }
 
-    const queue_number = Number(formData.get("queue_number") ?? 0);
     const customer_name = String(formData.get("customer_name") ?? "").trim().slice(0, 40);
     const customer_email = String(formData.get("customer_email") ?? "").trim().toLowerCase().slice(0, 120);
     const payment_method = "qris"; // Always use QRIS/E-Wallet via Doku
@@ -300,9 +299,6 @@ export async function POST(req: Request) {
     }
     if (!customer_email || !isValidEmail(customer_email)) {
       return NextResponse.json({ error: "Valid email is required" }, { status: 400 });
-    }
-    if (queue_number < 1 || queue_number > 999) {
-      return NextResponse.json({ error: "Queue number must be between 1-999" }, { status: 400 });
     }
 
     // Upload photos to Supabase Storage (using service role key)
@@ -376,7 +372,6 @@ export async function POST(req: Request) {
         size: photoSizes[0] || "4R", // Use first size (for backward compatibility)
         amount,
         status: "PENDING",
-        queue_number,
         payment_method,
         created_at: new Date().toISOString(),
         paid_at: null,
@@ -426,7 +421,6 @@ export async function POST(req: Request) {
         amount,
         items,
         type: "ORDER_PLACED",
-        queueNumber: queue_number,
       });
     } catch (emailError) {
       console.error("Email error:", emailError);

@@ -35,7 +35,6 @@ export default function KioskPage() {
   // Customer info
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [queueNumber, setQueueNumber] = useState("");
 
   // Photo upload (store File objects after compression)
   const [uploadedUrls, setUploadedUrls] = useState<File[]>([]);
@@ -57,7 +56,6 @@ export default function KioskPage() {
     amount: number;
     email: string | null;
     name: string | null;
-    queueNumber: number | null;
   } | null>(null);
 
   // Keep timeout id so we can clear on manual close
@@ -85,7 +83,6 @@ export default function KioskPage() {
   function resetForm() {
     setName("");
     setEmail("");
-    setQueueNumber("");
     setUploadedUrls([]);
     setPreviewUrls([]);
     setPhotoSizes([]);
@@ -280,16 +277,12 @@ export default function KioskPage() {
     resetForm();
   }
 
-  const queueNum = parseInt(queueNumber, 10);
-  const isValidQueueNumber = !isNaN(queueNum) && queueNum >= 1 && queueNum <= 999;
-
   const canPay =
     !loading &&
     dokuReady &&
     name.trim().length > 0 &&
     email.trim().length > 0 &&
     isValidEmail(email.trim()) &&
-    isValidQueueNumber &&
     uploadedUrls.length > 0 &&
     photoSizes.length === uploadedUrls.length;
 
@@ -316,11 +309,6 @@ export default function KioskPage() {
       return;
     }
 
-    if (!isValidQueueNumber) {
-      setStatus({ kind: "warn", text: "Nomor urut harus diisi (1-999)." });
-      return;
-    }
-
     setLoading(true);
     setStatus({ kind: "info", text: "Mengupload foto dan membuat pesanan..." });
 
@@ -341,7 +329,6 @@ export default function KioskPage() {
       });
       // Send per-photo sizes array as JSON string
       formData.append("photo_sizes", JSON.stringify(photoSizes));
-      formData.append("queue_number", queueNum.toString());
       formData.append("customer_name", name.trim());
       formData.append("customer_email", email.trim());
       formData.append("payment_method", "qris");
@@ -381,7 +368,6 @@ export default function KioskPage() {
           amount: total,
           email: email.trim() || null,
           name: name.trim() || null,
-          queueNumber: queueNum,
         });
         setSuccessOpen(true);
         setStatus({ kind: "ok", text: "Pesanan berhasil dibuat. Pembayaran otomatis." });
@@ -582,13 +568,6 @@ export default function KioskPage() {
                 </div>
               )}
 
-              {successInfo?.queueNumber && (
-                <div className="flex items-center justify-between gap-3 bg-pink-100 rounded-lg px-3 py-2 -mx-1">
-                  <span className="text-pink-700 font-medium">🎫 Nomor Urut</span>
-                  <span className="text-pink-700 font-bold text-lg">{successInfo.queueNumber}</span>
-                </div>
-              )}
-
               <div className="mt-1 rounded-xl bg-pink-50 border border-pink-100 p-3 text-xs text-pink-700">
                 {successInfo?.email ? (
                   <>
@@ -684,28 +663,6 @@ export default function KioskPage() {
                 {!isValidEmail(email.trim()) && email.trim() && (
                   <div className="mt-2 text-xs text-red-600 flex items-center gap-1">
                     <span>⚠️</span> Format email tidak valid.
-                  </div>
-                )}
-              </div>
-
-              {/* Nomor Urut Tiket */}
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700">
-                  Masukan Nomor Urut Tiket <span className="text-red-500 font-normal">*</span>
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  autoComplete="off"
-                  value={queueNumber}
-                  onChange={(e) => setQueueNumber(e.target.value.replace(/\D/g, '').slice(0, 3))}
-                  placeholder="Masukkan nomor urut Anda yang ada di tiket"
-                  className="mt-2 w-full rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-[#ff4b86] focus:ring-2 focus:ring-pink-500/20 focus:bg-white outline-none transition-all"
-                />
-                {queueNumber && !isValidQueueNumber && (
-                  <div className="mt-2 text-xs text-red-600 flex items-center gap-1">
-                    <span>⚠️</span> Nomor urut harus antara 1-999
                   </div>
                 )}
               </div>

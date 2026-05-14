@@ -27,7 +27,7 @@ export async function sendOrderEmail({
   amount: number;
   items: { name: string; qty: number; price: number }[];
   type: 'ORDER_PLACED' | 'PAYMENT_RECEIVED';
-  queueNumber: number;
+  queueNumber?: number;
 }) {
   // Skip email if Resend not available
   if (!resend || !process.env.RESEND_API_KEY) {
@@ -76,7 +76,7 @@ export async function sendOrderEmail({
 
           <div class="info">
             <p><strong>Order ID:</strong> ${orderId}</p>
-            <p><strong>Nomor Antrian:</strong> <span style="font-size: 1.2em; font-weight: bold;">${queueNumber}</span></p>
+
           </div>
 
           <table class="details">
