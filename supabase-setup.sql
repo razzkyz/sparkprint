@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS public.print_orders (
   paid_at TIMESTAMPTZ,
   
   -- Index for faster queries
-  CONSTRAINT chk_size CHECK (size IN ('4x6', '2x6')),
+  CONSTRAINT chk_size CHECK (size IN ('4x6', '2x6', '2R', '4R', 'custom')),
   CONSTRAINT chk_qty CHECK (qty >= 1 AND qty <= 100),
   CONSTRAINT chk_status CHECK (status IN ('PENDING', 'PAID', 'PRINTED', 'FAILED'))
 );
@@ -82,6 +82,13 @@ WHERE image_url IS NOT NULL AND image_urls IS NULL;
 UPDATE public.print_orders 
 SET photo_sizes = ARRAY[size] 
 WHERE photo_sizes IS NULL AND size IS NOT NULL;
+
+-- 6. UPDATE CHECK CONSTRAINT to support new sizes (2R, 4R, custom)
+-- Drop old constraint
+ALTER TABLE public.print_orders DROP CONSTRAINT IF EXISTS chk_size;
+
+-- Add new constraint with all supported sizes
+ALTER TABLE public.print_orders ADD CONSTRAINT chk_size CHECK (size IN ('4x6', '2x6', '2R', '4R', 'custom'));
 
 -- 5. ENABLE ROW LEVEL SECURITY
 ALTER TABLE public.print_orders ENABLE ROW LEVEL SECURITY;
