@@ -86,7 +86,7 @@ export default function AdminPage() {
   // Filters
   const [status, setStatus] = useState<"ALL" | "PENDING" | "PAID" | "PRINTED" | "FAILED">("ALL");
   const [needsPrint, setNeedsPrint] = useState(false);
-  const [sizeFilter, setSizeFilter] = useState<"ALL" | "2R" | "4R" | "4x6">("ALL");
+  const [sizeFilter, setSizeFilter] = useState<"ALL" | "2R" | "4R" | "4x6" | "custom">("ALL");
   const [printOrientation, setPrintOrientation] = useState<PrintOrientation>("landscape");
   const [q, setQ] = useState("");
 
@@ -554,6 +554,7 @@ ${j.analysis.recommendation}
               <option value="ALL">Semua Ukuran</option>
               <option value="2R">📷 2R (Strip)</option>
               <option value="4R">📷 4R (10×15cm)</option>
+              <option value="custom">✨ Custom (25.000)</option>
             </select>
           </div>
 
