@@ -285,7 +285,7 @@ export async function POST(req: Request) {
     }
 
     // Validate all sizes
-    if (!photoSizes.every(size => ["2R", "4R", "4x6"].includes(size))) {
+    if (!photoSizes.every(size => ["2R", "4R", "4x6", "custom"].includes(size))) {
       return NextResponse.json({ error: "Invalid size in photo_sizes" }, { status: 400 });
     }
 
